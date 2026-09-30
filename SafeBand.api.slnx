@@ -1,0 +1,6 @@
+<Solution>
+  <Folder Name="/Documentacion/">
+    <File Path="MANUAL.md" />
+  </Folder>
+  <Project Path="SafeBand.api/SafeBand.api.csproj" />
+</Solution>

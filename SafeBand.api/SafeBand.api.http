@@ -1,0 +1,6 @@
+@SafeBand.api_HostAddress = http://localhost:5213
+
+GET {{SafeBand.api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
