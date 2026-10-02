@@ -12,6 +12,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     public DbSet<Zona> Zonas => Set<Zona>();
     public DbSet<Nodo> Nodos => Set<Nodo>();
     public DbSet<Alumno> Alumnos => Set<Alumno>();
+    public DbSet<Tutor> Tutores => Set<Tutor>();
+    public DbSet<TutorAlumno> TutoresAlumnos => Set<TutorAlumno>();
     public DbSet<Pulsera> Pulseras => Set<Pulsera>();
     public DbSet<LecturaBle> LecturasBle => Set<LecturaBle>();
 
@@ -43,6 +45,29 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.Property(a => a.Matricula).HasMaxLength(30);
             // Matrícula única solo entre los que sí la tienen
             e.HasIndex(a => a.Matricula).IsUnique().HasFilter("[Matricula] IS NOT NULL");
+        });
+
+        modelBuilder.Entity<Tutor>(e =>
+        {
+            e.Property(t => t.Nombres).HasMaxLength(100);
+            e.Property(t => t.ApellidoPaterno).HasMaxLength(100);
+            e.Property(t => t.ApellidoMaterno).HasMaxLength(100);
+            e.Property(t => t.Email).HasMaxLength(200);
+            e.Property(t => t.Telefono).HasMaxLength(20);
+            e.HasIndex(t => t.Email).IsUnique();   // un correo = un tutor
+        });
+
+        modelBuilder.Entity<TutorAlumno>(e =>
+        {
+            e.ToTable("TutoresAlumnos");
+            // Llave compuesta: el mismo vínculo tutor-alumno no puede repetirse
+            e.HasKey(ta => new { ta.TutorId, ta.AlumnoId });
+            e.Property(ta => ta.Parentesco).HasMaxLength(50);
+            // Si se borra un tutor o un alumno, se borran sus vínculos (no el otro lado)
+            e.HasOne(ta => ta.Tutor).WithMany(t => t.Alumnos).HasForeignKey(ta => ta.TutorId)
+                .OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(ta => ta.Alumno).WithMany(a => a.Tutores).HasForeignKey(ta => ta.AlumnoId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<Pulsera>(e =>

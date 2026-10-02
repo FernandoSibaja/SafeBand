@@ -11,9 +11,12 @@ var builder = WebApplication.CreateBuilder(args);
 // Descripción de la API (la usa Swagger)
 builder.Services.AddOpenApi();
 
-// Base de datos: SQL Server con la cadena "SafeBand" de appsettings
+// Base de datos: SQL Server con la cadena "SafeBand"
+// (en tu PC viene de appsettings.Development.json; en Azure, de la configuración del App Service).
+// EnableRetryOnFailure: reintenta si la BD gratuita de Azure está "dormida" y tarda en despertar.
 builder.Services.AddDbContext<AppDbContext>(opt =>
-    opt.UseSqlServer(builder.Configuration.GetConnectionString("SafeBand")));
+    opt.UseSqlServer(builder.Configuration.GetConnectionString("SafeBand"),
+        sql => sql.EnableRetryOnFailure()));
 
 // Validación automática de los [Required], [Range]... de los contratos (Contracts/)
 builder.Services.AddProblemDetails();
@@ -44,16 +47,18 @@ app.UseExceptionHandler(e => e.Run(async ctx =>
     await ctx.Response.WriteAsJsonAsync(new { error = "Error interno del servidor." });
 }));
 
-if (app.Environment.IsDevelopment())
+// Descripción de la API y página /swagger para probarla.
+// Activas también en Azure como evidencia del backend desplegado (prototipo, sin datos sensibles aún).
+app.MapOpenApi();
+app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SafeBand API"));
+
+// Al arrancar (en tu PC y en Azure):
+//   1. Aplica las migraciones pendientes → crea/actualiza las tablas solo.
+//   2. Inserta los datos iniciales si la BD está vacía.
+using (var scope = app.Services.CreateScope())
 {
-    app.MapOpenApi();
-
-    // Página para probar la API desde el navegador: /swagger
-    app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SafeBand API"));
-
-    // Datos de prueba (solo en tu PC, solo si la BD está vacía)
-    using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    await db.Database.MigrateAsync();
     await DbSeeder.SembrarAsync(db);
 }
 
@@ -64,5 +69,8 @@ app.UseStaticFiles();
 // ---------- 3. Endpoints ----------
 
 app.MapLecturas();   // /api/lecturas  (Endpoints/LecturasEndpoints.cs)
+app.MapAlumnos();    // /api/alumnos   (Endpoints/AlumnosEndpoints.cs)
+app.MapPulseras();   // /api/pulseras  (Endpoints/PulserasEndpoints.cs)
+app.MapTutores();    // /api/tutores   (Endpoints/TutoresEndpoints.cs)
 
 app.Run();

@@ -4,7 +4,8 @@ using SafeBand.api.Models;
 namespace SafeBand.api.Data;
 
 /// <summary>
-/// Datos iniciales de prueba. Solo corre en desarrollo (tu PC) y solo si la tabla Zonas está vacía.
+/// Datos iniciales. Corre al arrancar la API (en tu PC y en Azure), solo si la tabla Zonas está vacía.
+/// Así el ESP32 puede mandar lecturas de "nodo-1" / "SB-0001" desde el primer momento.
 /// </summary>
 public static class DbSeeder
 {

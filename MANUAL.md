@@ -63,9 +63,15 @@ SafeBand.api\
     │   ├── app.js                 ← lógica: pide datos a la API y los muestra
     │   └── styles.css             ← diseño
     ├── Contracts\
-    │   └── LecturaContracts.cs    ← forma del JSON que entra y sale de /api/lecturas
+    │   ├── LecturaContracts.cs    ← forma del JSON que entra y sale de /api/lecturas
+    │   ├── AlumnoContracts.cs     ← JSON de /api/alumnos
+    │   ├── PulseraContracts.cs    ← JSON de /api/pulseras
+    │   └── TutorContracts.cs      ← JSON de /api/tutores
     ├── Endpoints\
-    │   └── LecturasEndpoints.cs   ← POST y GET de /api/lecturas
+    │   ├── LecturasEndpoints.cs   ← POST y GET de /api/lecturas
+    │   ├── AlumnosEndpoints.cs    ← administración de alumnos
+    │   ├── PulserasEndpoints.cs   ← administración de pulseras y asignación a alumnos
+    │   └── TutoresEndpoints.cs    ← administración de tutores y vínculo con sus hijos
     ├── Data\
     │   ├── AppDbContext.cs        ← conexión entre los modelos y SQL Server
     │   └── DbSeeder.cs            ← datos de prueba (solo en tu PC)
@@ -74,6 +80,8 @@ SafeBand.api\
         ├── Zona.cs
         ├── Nodo.cs
         ├── Alumno.cs
+        ├── Tutor.cs
+        ├── TutorAlumno.cs
         ├── Pulsera.cs
         └── LecturaBle.cs
 ```
@@ -101,7 +109,7 @@ Arranca la API. Tiene tres partes, de arriba hacia abajo:
 
 Estado actual (organizado en 3 secciones con comentarios `// ---------- 1. / 2. / 3.`):
 1. **Servicios**: OpenAPI, base de datos, validación (`AddValidation`).
-2. **Procesamiento**: manejador de errores (JSON mal formado → 400 con mensaje claro; error inesperado → 500), y en desarrollo: OpenAPI, Swagger UI y el sembrador de datos.
+2. **Procesamiento**: manejador de errores (JSON mal formado → 400 con mensaje claro; error inesperado → 500), OpenAPI + Swagger UI (**también en Azure**, como evidencia), y al arrancar: migraciones + datos iniciales.
 3. **Endpoints**: `app.MapLecturas()` registra los de `Endpoints\LecturasEndpoints.cs`.
 
 Se quitó el ejemplo `/weatherforecast` y `UseHttpsRedirection()` (el ESP32 manda por `http://` en la red local y la redirección lo haría fallar; en Azure el HTTPS lo da el propio App Service).
@@ -143,8 +151,18 @@ Es el puente entre el código y SQL Server.
 | `HasIndex(l => l.Timestamp)` y `(PulseraId, Timestamp)` | `LecturaBle` | Índices para que "últimas lecturas" y "lecturas de una pulsera" sean rápidas aunque haya millones |
 | `OnDelete(DeleteBehavior.Restrict)` | Relaciones | Impide borrar una zona con nodos, o un nodo/pulsera con lecturas. Por defecto EF borraría en **cascada** (se perdería el historial). Para eso existe `Activo`/`Activa`: se desactiva en vez de borrar |
 
-### `Data\DbSeeder.cs` — datos de prueba
-Al arrancar la API **en desarrollo**, si la tabla `Zonas` está vacía, inserta:
+### Al arrancar la API (en tu PC y en Azure)
+En `Program.cs`:
+```csharp
+await db.Database.MigrateAsync();   // aplica migraciones pendientes → crea/actualiza tablas solo
+await DbSeeder.SembrarAsync(db);    // datos iniciales si la BD está vacía
+```
+Por eso en Azure **no hace falta correr `Update-Database`** contra la nube: la primera vez que arranca, crea las tablas y los datos.
+
+`EnableRetryOnFailure()` en `AddDbContext`: si la BD gratuita de Azure está "dormida", reintenta en vez de fallar a la primera.
+
+### `Data\DbSeeder.cs` — datos iniciales
+Al arrancar la API (**en tu PC y en Azure**), si la tabla `Zonas` está vacía, inserta:
 
 | Tabla | Registro |
 |---|---|
@@ -154,7 +172,7 @@ Al arrancar la API **en desarrollo**, si la tabla `Zonas` está vacía, inserta:
 
 Se necesitan porque una lectura solo se puede guardar si el nodo y la pulsera ya existen (llaves foráneas).
 
-- Se llama desde `Program.cs` dentro de `if (app.Environment.IsDevelopment())` → **nunca corre en Azure**.
+- Se llama desde `Program.cs` al arrancar, **también en Azure** (para que el ESP32 pueda mandar lecturas de `nodo-1`/`SB-0001` a la nube desde el inicio).
 - `if (await db.Zonas.AnyAsync()) return;` → si ya hay datos, no hace nada (no duplica).
 - `Zona = salon` en el nodo: se asigna el objeto, y EF llena `ZonaId` solo al guardar.
 - `SaveChangesAsync()` es donde realmente se ejecutan los `INSERT`.
@@ -261,10 +279,48 @@ El niño que usa la pulsera.
 | `Activo` | bool | Baja del alumno sin borrar su historial |
 | `FechaAlta` | DateTime | Cuándo se registró |
 | `Pulseras` | `List<Pulsera>` | **No es columna.** Navegación: las pulseras del alumno |
+| `Tutores` | `List<TutorAlumno>` | **No es columna.** Navegación: sus tutores |
 
 **¿Por qué el nombre del niño no va directo en `Pulseras`?** El niño tiene más datos (grupo, tutores, alergias) que le pertenecen a él, no a la pulsera; y la pulsera se puede reemplazar si se pierde sin que el niño pierda su historial.
 
-**Datos que irán en otras tablas más adelante:** grupo (`Grupos`), tutores (relación muchos a muchos), alergias, foto (fase de recogida).
+**Datos que irán en otras tablas más adelante:** grupo (`Grupos`), alergias, foto (fase de recogida).
+
+### `Models\Tutor.cs` → tabla `Tutores`
+Padre, madre o tutor legal. Lo da de alta **la escuela**; después el tutor crea su cuenta con un código de invitación.
+
+| Propiedad | Tipo | Descripción |
+|---|---|---|
+| `Id` | int | Llave primaria |
+| `Nombres`, `ApellidoPaterno` | string (100) | Obligatorios |
+| `ApellidoMaterno` | string? (100) | Opcional |
+| `Email` | string (200) | Correo con el que se registrará. **Único**. Se guardará en minúsculas |
+| `Telefono` | string? (20) | Opcional |
+| `Activo` | bool | Desactivar sin borrar |
+| `FechaAlta` | DateTime | Cuándo se registró |
+| `Alumnos` | `List<TutorAlumno>` | **No es columna.** Navegación: sus hijos |
+
+### `Models\TutorAlumno.cs` → tabla `TutoresAlumnos`
+Vínculo **muchos a muchos**: un tutor tiene varios hijos y un alumno tiene varios tutores. **Es lo que decide qué niños ve cada padre en la app.**
+
+| Propiedad | Tipo | Descripción |
+|---|---|---|
+| `TutorId` + `AlumnoId` | int + int | **Llave primaria compuesta** (los dos juntos): el mismo vínculo no puede repetirse. Cada uno es además llave foránea |
+| `Parentesco` | string? (50) | "Madre", "Padre", "Abuela"... |
+| `EsContactoPrincipal` | bool | A quién se avisa primero ante una alerta |
+| `PuedeRecoger` | bool | Si puede recoger al alumno (se usará en la terminal de recogida). Default `true` |
+
+**Borrado:** si se borra un tutor o un alumno, se borran sus vínculos (`Cascade`), pero no el otro lado.
+
+### Seguridad: quién ve a qué niño
+- **El padre NO elige qué pulsera ver.** Si bastara con escribir "SB-0001", cualquiera podría ver dónde está cualquier niño.
+- **La escuela vincula** al tutor con sus hijos (`TutoresAlumnos`) y genera un **código de invitación de un solo uso**. El padre se registra con su correo + contraseña + ese código, y su cuenta queda ligada solo a sus hijos. Al registrarse acepta el aviso de privacidad (LFPDPPP).
+- El filtro se hace **en la API**, no en la página: aunque alguien llame la API directamente, solo recibe datos de sus hijos.
+
+| Rol | Ve | Puede |
+|---|---|---|
+| Padre / tutor | Solo sus hijos | Ver y recibir alertas |
+| Maestro | Su grupo | Pase de lista |
+| Administrador / director | Todo | Altas de alumnos, pulseras, nodos y tutores; generar códigos |
 
 **Datos que no se guardan a propósito:** CURP, dirección, datos médicos detallados. La LFPDPPP pide guardar solo lo necesario, más aún con datos de menores.
 
@@ -357,6 +413,100 @@ La `Z` al final de la hora significa UTC; el frontend la convierte a hora local.
 | Error inesperado del servidor | 500 | `{ "error": "Error interno del servidor." }` |
 
 Las validaciones de campos (`[Required]`, `[Range]`) están como atributos en `Contracts\LecturaContracts.cs` y las aplica `AddValidation()` automáticamente antes de entrar al endpoint.
+
+### `/api/alumnos` — `Endpoints\AlumnosEndpoints.cs`
+Administración de alumnos. **Por ahora abiertos (sin login)**; se protegerán para el rol Administrador en el paso de usuarios.
+
+| Método | Ruta | Qué hace | Respuestas |
+|---|---|---|---|
+| `GET` | `/api/alumnos` | Lista de alumnos **activos**, ordenados por apellido. `?incluirInactivos=true` incluye los dados de baja | 200 |
+| `GET` | `/api/alumnos/{id}` | Un alumno | 200 / 404 |
+| `POST` | `/api/alumnos` | Alta | 201 / 400 (validación) / 409 (matrícula repetida) |
+| `PUT` | `/api/alumnos/{id}` | Edita todos sus datos | 204 / 400 / 404 / 409 |
+| `DELETE` | `/api/alumnos/{id}` | **Baja lógica**: `Activo = false`, no se borra | 204 / 404 |
+
+**JSON para alta/edición** (`GuardarAlumnoRequest`):
+```json
+{ "nombres": "Ana Sofía", "apellidoPaterno": "López", "apellidoMaterno": "García",
+  "fechaNacimiento": "2018-05-14", "matricula": "A-0001" }
+```
+Obligatorios: `nombres`, `apellidoPaterno`. La fecha va como `"AAAA-MM-DD"`.
+
+**Respuesta** (`AlumnoResponse`): sus datos + `pulseras` (lista de IDs BLE de sus pulseras activas, ej. `["SB-0001"]`).
+
+**Códigos HTTP usados (convención REST):**
+| Código | Significado |
+|---|---|
+| 200 OK | Consulta exitosa |
+| 201 Created | Se creó (y el header `Location` dice dónde) |
+| 204 No Content | Se editó o dio de baja; no hay nada que devolver |
+| 400 Bad Request | Datos inválidos |
+| 404 Not Found | No existe ese Id |
+| 409 Conflict | Choca con algo existente (matrícula repetida) |
+
+**¿Por qué DELETE no borra?** El alumno tiene historial (lecturas de su pulsera, en el futuro asistencias y consumos). Borrarlo perdería ese historial; desactivarlo lo saca de las listas y lo conserva.
+
+### `/api/pulseras` — `Endpoints\PulserasEndpoints.cs`
+Administración de pulseras. **Por ahora abiertos (sin login).**
+
+| Método | Ruta | Qué hace | Respuestas |
+|---|---|---|---|
+| `GET` | `/api/pulseras` | Pulseras activas. `?sinAsignar=true` solo las libres; `?incluirInactivas=true` también las dadas de baja | 200 |
+| `GET` | `/api/pulseras/{id}` | Una pulsera | 200 / 404 |
+| `POST` | `/api/pulseras` | Alta (queda sin asignar) | 201 / 400 / 409 |
+| `PUT` | `/api/pulseras/{id}` | Edita identificador BLE / UID NFC | 204 / 400 / 404 / 409 |
+| `PUT` | `/api/pulseras/{id}/alumno` | **Asigna** a un alumno: `{ "alumnoId": 3 }`. **Quita** la asignación: `{ "alumnoId": null }` | 204 / 400 / 404 / 409 |
+| `DELETE` | `/api/pulseras/{id}` | **Baja lógica** (perdida o dañada): `Activa = false`, conserva lecturas | 204 / 404 |
+
+**JSON de alta/edición:**
+```json
+{ "identificadorBle": "SB-0002", "uidNfc": "04A1B2C3D4E5F6" }
+```
+- `identificadorBle`: **formato `SB-XXXX`**, máx. 15 caracteres (los nodos solo escuchan el prefijo `SB-` y su firmware admite hasta 15). Se guarda en mayúsculas. Único.
+- `uidNfc`: opcional, **hexadecimal**. Acepta separadores (`04:A1:B2...`) y los quita. Único.
+
+**Reglas de asignación (seguridad):**
+1. **No se reasigna sin querer:** si la pulsera ya es de otro niño → 409 "ya está asignada a ...; quítale la asignación primero". Evita que unos papás terminen viendo la ubicación de otro niño por error.
+2. **Una pulsera activa por alumno:** si el alumno ya tiene otra activa → 409.
+3. No se asigna una pulsera dada de baja ni a un alumno dado de baja → 400.
+
+**Flujo típico de pulsera perdida:** `DELETE /api/pulseras/{vieja}` → `POST /api/pulseras` (nueva) → `PUT /api/pulseras/{nueva}/alumno`.
+
+### `/api/tutores` — `Endpoints\TutoresEndpoints.cs`
+Administración de tutores y de **qué niños ve cada uno**. **Por ahora abiertos (sin login).**
+
+| Método | Ruta | Qué hace | Respuestas |
+|---|---|---|---|
+| `GET` | `/api/tutores` | Tutores activos con sus hijos. `?incluirInactivos=true` | 200 |
+| `GET` | `/api/tutores/{id}` | Un tutor con sus hijos | 200 / 404 |
+| `POST` | `/api/tutores` | Alta | 201 / 400 / 409 (correo repetido) |
+| `PUT` | `/api/tutores/{id}` | Edita sus datos | 204 / 400 / 404 / 409 |
+| `DELETE` | `/api/tutores/{id}` | Baja lógica (`Activo = false`) | 204 / 404 |
+| `PUT` | `/api/tutores/{id}/alumnos/{alumnoId}` | **Vincula** con un hijo, o actualiza el vínculo si ya existe | 200 (tutor con hijos) / 400 / 404 |
+| `DELETE` | `/api/tutores/{id}/alumnos/{alumnoId}` | **Desvincula**: deja de ver a ese niño | 204 / 404 |
+
+**JSON de alta/edición:**
+```json
+{ "nombres": "María", "apellidoPaterno": "García", "apellidoMaterno": "Ruiz",
+  "email": "maria@correo.com", "telefono": "686 123 4567" }
+```
+Obligatorios: `nombres`, `apellidoPaterno`, `email` (formato válido; se guarda en minúsculas; único). `telefono`: números, espacios, `+`, `-`, `()`.
+
+**JSON para vincular** (`PUT /api/tutores/{id}/alumnos/{alumnoId}`):
+```json
+{ "parentesco": "Madre", "esContactoPrincipal": true, "puedeRecoger": true }
+```
+Todos opcionales (`puedeRecoger` default `true`).
+
+**Reglas:**
+- **Un solo contacto principal por alumno:** al marcar a un tutor como principal, los demás tutores de ese niño dejan de serlo automáticamente.
+- No se vincula un tutor o un alumno dado de baja → 400.
+- Vincular dos veces no duplica: actualiza el vínculo existente (por eso es `PUT`).
+- Desvincular sí **borra** el renglón de `TutoresAlumnos` (es solo el permiso; no hay historial que perder).
+
+**Respuesta** (`TutorResponse`): sus datos + `hijos`: `[{ alumnoId, nombre, parentesco, esContactoPrincipal, puedeRecoger }]` (solo alumnos activos).
+
+**Flujo de alta de una familia:** `POST /api/alumnos` → `POST /api/pulseras` + `PUT /api/pulseras/{id}/alumno` → `POST /api/tutores` (mamá, papá) → `PUT /api/tutores/{id}/alumnos/{alumnoId}` por cada uno.
 
 ---
 
@@ -525,6 +675,35 @@ EF la crea sola en la BD y anota ahí cada migración aplicada. Así `Update-Dat
 |---|---|
 | `20260929153232_Fase1_Inicial` | Tablas `Zonas`, `Nodos`, `Pulseras`, `LecturasBle` con llaves foráneas (borrado restringido) e índices |
 | `20260930025056_AgregarAlumnos` | Tabla `Alumnos`; columna `AlumnoId` (nullable) en `Pulseras` con llave foránea `FK_Pulseras_Alumnos_AlumnoId` |
+| `20261002075518_AgregarTutores` | Tablas `Tutores` (correo único) y `TutoresAlumnos` (llave compuesta, borrado en cascada) |
+
+---
+
+## 7b. Azure (nube)
+
+**Cuenta:** Azure for Students con `onit.sibaja@uabc.edu.mx` — US$100 de crédito, vence 2027-10-02, sin tarjeta.
+**Portal:** https://portal.azure.com
+
+### Recursos creados
+| Recurso | Nombre | Detalle |
+|---|---|---|
+| Grupo de recursos | `SafeBandapi20261002002608ResourceGroup` | "Carpeta" que agrupa todo el proyecto. Borrarlo borra todo lo de adentro |
+| App Service plan | `plan-safeband` | **Mexico Central**, **F1 (Free)**, Windows |
+| App Service | `safeband-api-sibaja` | Donde corre la API + la página (wwwroot) |
+| Servidor SQL | `safeband-sql-sibaja` | Mexico Central, SQL authentication, firewall: permite servicios de Azure + IP de la PC. Vacío (no cobra) |
+| Azure SQL Database | *(pendiente)* | `safeband-db`. **La oferta gratuita NO está disponible en Mexico Central** (error `ProvisioningDisabled`). Opción elegida al retomar: **Basic (DTU, 2 GB, ~US$5/mes del crédito)** en el servidor existente; alternativa: oferta gratuita en otra región permitida con un servidor nuevo |
+
+### Pendiente para terminar el despliegue (pausado el 2026-10-02 por decisión de avanzar primero con el programa)
+1. Crear `safeband-db` (Basic) en `safeband-sql-sibaja` — **sin** "Apply offer".
+2. En la App Service → *Settings → Environment variables → Connection strings*: agregar `SafeBand` (tipo SQLAzure) con la cadena de la base.
+3. Visual Studio → **Publish** (el perfil ya existe: `Properties\PublishProfiles\safeband-api-sibaja - Web Deploy.pubxml`).
+4. Probar `https://<app>.azurewebsites.net/swagger` y la página.
+5. Nodo: URL de Azure (`https://...`) — requiere agregar certificados al firmware para HTTPS.
+
+### Lecciones
+- **Región:** la cuenta de estudiante solo permite ciertas regiones (error `RequestDisallowedByAzure`). **Mexico Central** sí funciona. Lista completa: portal → Policy → Assignments → *Allowed resource deployment regions* → Parameters.
+- **Plan:** el asistente de Visual Studio propone **S1 (de pago, ~US$70/mes)** por defecto. Siempre cambiar a **F1 (Free)**. Se revisa en la App Service → *App Service plan* → *Pricing plan*.
+- **Plan gratuito F1:** la app se "duerme" si no recibe peticiones; la primera tarda unos segundos en despertar. Tiene límite de CPU diario (suficiente para el prototipo).
 
 ---
 
@@ -590,7 +769,18 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 - [ ] **Pedido del profesor:** triangulación → X/Y en `Nodos`, cálculo de posición en la API, `GET /api/ubicaciones`, página de mapa con marcadores
 - [ ] Prototipo alfa: eventos + latido, guardar y reenviar sin WiFi, nodos puente con ESP-NOW
 - [ ] Pruebas del checkpoint: 10 envíos, latencia, dato incorrecto, pérdida de conexión
-- [ ] Endpoints de administración: alumnos, pulseras (asignar a alumno), nodos, zonas
+- [ ] **Usuarios y roles** (decidido 2026-10-02: la escuela vincula padres con código de invitación):
+  - [x] 1a. Modelos `Tutor` y `TutorAlumno`
+  - [x] 1a. Migración `AgregarTutores`
+  - [x] 1b. Endpoints de alumnos
+  - [x] 1b. Endpoints de pulseras (alta y asignar a alumno)
+  - [x] 1b. Endpoints de tutores (alta y vincular hijos)
+  - [ ] 1b. Endpoints de nodos y zonas
+  - [ ] 2. Inicio de sesión con ASP.NET Core Identity + roles (Padre, Maestro, Administrador)
+  - [ ] 3. Códigos de invitación y registro del padre (con aviso de privacidad)
+  - [ ] 4. Filtrar endpoints por rol (el padre solo ve a sus hijos)
+  - [ ] 5. Frontend: login, vista de padre, vista de administrador
+  - [ ] 6. Clave (API key) por nodo para que nadie mande lecturas falsas
 - [ ] Después: alumnos, tutores, grupos, alertas, tienda, recogida, PWA
 
 ---
@@ -617,3 +807,10 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-09-30 | Creado `firmware\nodo` (un solo programa para todos los nodos): escanea `SB-*`, promedia RSSI por ventana de 10 s, POST a la API; SOS inmediato. Compila; partición ampliada a 1.5 MB. |
 | 2026-09-30 | Nodo conectado: muestra el motivo de desconexión WiFi; perfil `red-local (ESP32)` en la API. Problemas resueltos: SSID mal escrito, IP de ejemplo, red Pública en Windows, punto final en la URL (404). Lecturas reales llegando. |
 | 2026-10-01 | Decisiones de arquitectura: BLE en pulsera, WiFi/ESP-NOW en nodos, un nodo por zona, eventos + latido a futuro, seguir con ESP-IDF, mapa con posición. Pedidos del profesor anotados: alcance BLE y triangulación. |
+| 2026-10-02 | Activado Azure for Students (US$100, vence 2027-10-02). API lista para la nube: migraciones y datos iniciales automáticos al arrancar, reintentos de conexión a la BD, Swagger también en producción. Probado en modo Production local. |
+| 2026-10-02 | Creada App Service `safeband-api-sibaja` en Mexico Central, plan F1 gratuito (West US 3 no estaba permitida; el asistente proponía S1 de pago). |
+| 2026-10-02 | Servidor SQL creado; la base gratuita falló (no disponible en Mexico Central). Despliegue pausado: se continúa con el programa en local y se termina Azure antes de la entrega. |
+| 2026-10-02 | Diseño de usuarios: la escuela vincula padres con hijos mediante código de invitación; roles Padre / Maestro / Administrador; filtro en la API. Creados `Models\Tutor.cs` y `Models\TutorAlumno.cs` (muchos a muchos). |
+| 2026-10-02 | Migración `AgregarTutores` aplicada. Endpoints de alumnos (`GET`, `POST`, `PUT`, `DELETE` = baja lógica). Probados: lista vacía 200, Id inexistente 404, falta nombre 400, fecha inválida 400. |
+| 2026-10-02 | Endpoints de pulseras: alta, edición, asignar/quitar alumno, baja lógica. Reglas: no reasignar la pulsera de otro niño, una pulsera activa por alumno, formato `SB-XXXX`, UID NFC hexadecimal. Probados: formato inválido 400, duplicado 409, UID no hex 400, alumno inexistente 400, Id inexistente 404. |
+| 2026-10-02 | Endpoints de tutores: alta, edición, baja lógica, vincular/desvincular hijos (parentesco, contacto principal único por alumno, puede recoger). Probados: correo inválido 400, teléfono inválido 400, tutor inexistente 404, vínculo inexistente 404. |

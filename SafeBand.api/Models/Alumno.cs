@@ -17,4 +17,7 @@ public class Alumno
 
     // Relación: un alumno puede tener varias pulseras a lo largo del tiempo (si pierde una, se le da otra)
     public List<Pulsera> Pulseras { get; set; } = [];
+
+    // Relación: sus tutores (papá, mamá...)
+    public List<TutorAlumno> Tutores { get; set; } = [];
 }
