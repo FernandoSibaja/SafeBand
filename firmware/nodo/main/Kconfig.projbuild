@@ -1,0 +1,35 @@
+menu "SafeBand - Nodo"
+
+    config SAFEBAND_NODO_ID
+        string "Código del nodo"
+        default "nodo-1"
+        help
+            Debe coincidir con el campo Codigo de la tabla Nodos.
+            Es lo único que cambia entre un nodo y otro (nodo-1, nodo-2...).
+
+    config SAFEBAND_WIFI_SSID
+        string "Nombre de la red WiFi (SSID)"
+        default ""
+
+    config SAFEBAND_WIFI_PASSWORD
+        string "Contraseña del WiFi"
+        default ""
+        help
+            Se guarda solo en sdkconfig, que NO se sube a GitHub (ver firmware/.gitignore).
+
+    config SAFEBAND_API_URL
+        string "URL del endpoint de lecturas"
+        default "http://192.168.1.50:5213/api/lecturas"
+        help
+            Local: http://<IP-de-tu-PC>:5213/api/lecturas
+            Azure: https://<tu-app>.azurewebsites.net/api/lecturas
+
+    config SAFEBAND_VENTANA_S
+        int "Ventana de promedio (segundos)"
+        default 10
+        range 2 120
+        help
+            El nodo promedia el RSSI de cada pulsera durante esta ventana y manda
+            UNA lectura por pulsera. El SOS se manda de inmediato, sin esperar.
+
+endmenu

@@ -1,0 +1,4 @@
+# Bluetooth con el stack NimBLE (más ligero que Bluedroid), solo BLE
+CONFIG_BT_ENABLED=y
+CONFIG_BT_NIMBLE_ENABLED=y
+CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y

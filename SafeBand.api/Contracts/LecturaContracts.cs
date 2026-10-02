@@ -1,7 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 
 namespace SafeBand.api.Contracts;
-
+        
 /// <summary>
 /// JSON que manda el ESP32 del nodo. Ejemplo:
 /// { "nodo": "nodo-1", "pulsera": "SB-0001", "rssi": -67 }

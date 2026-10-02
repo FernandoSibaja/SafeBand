@@ -31,6 +31,12 @@ Cerrar esa consola (o Ctrl+C) apaga la API.
 | Cómo se crean las tablas | **Code First** con Entity Framework Core | Las clases de C# se convierten en tablas mediante migraciones; hay historial de cambios y la BD de Azure queda idéntica a la local |
 | Comunicación ESP32 → API | HTTP (JSON) | Más simple de desplegar. Si se cae el internet, el ESP32 guarda las lecturas en cola y las reenvía con su hora original. MQTT queda como opción futura (útil para el modo emergencia) |
 | Volumen de `LecturasBle` | El nodo **promedia** el RSSI de cada pulsera en una ventana (~10 s) y manda 1 lectura por ventana; SOS / pulsera quitada / batería baja se mandan de inmediato. A futuro: tabla de **estancias** (entrada/salida por zona) como dato permanente y **purga** de lecturas crudas con más de ~30 días | Sin resumir serían ~880 mil registros/día por salón. Resumiendo: ~88 mil/día (~10 MB), manejable. Promediar además reduce el ruido del RSSI |
+| Pulsera → nodo | **BLE** (no WiFi ni ESP-NOW) | Batería: WiFi conectado agotaría 400 mAh en horas; BLE dura días. El alcance corto (~10-30 m) ayuda a no detectar niños del salón de al lado. Es estándar (un celular puede simular la pulsera) |
+| Nodo → API | **WiFi** al router si la zona tiene internet; **ESP-NOW** hacia un nodo vecino si no tiene (nodos puente). El nodo con internet recibe por ESP-NOW y sube por WiFi | En muchas escuelas solo algunas zonas tienen internet. ESP-NOW no necesita router y llega más lejos. Requisito: todos en el mismo canal WiFi que el router. **Prototipo alfa**, no checkpoint |
+| Cuántos nodos | **Uno por zona** (salón); **3-4 en áreas grandes** (patio) | Los define el número de zonas, no el alcance BLE. Para posición con punto se necesitan ≥3 nodos que vean la pulsera |
+| Envío de datos (futuro) | Pasar de "lectura cada 10 s" a **eventos** (entró / salió / SOS / quitada) + **latido** periódico | ~3 mil registros/día por salón en vez de ~88 mil. El latido distingue "se fue" de "nodo caído". Se hace **después del checkpoint**: primero se necesitan datos crudos para calibrar umbrales |
+| Framework del firmware | **ESP-IDF** para pulsera y nodos. Terminales (PN532, LCD, teclado): decidir al llegar el hardware; Arduino/PlatformIO es válido ahí | IDF da control fino de batería y sueño; pulsera y nodo ya funcionan. Cada dispositivo es independiente (hablan JSON con la API), se pueden mezclar frameworks |
+| Ubicación | **Zona** como dato principal (alertas). **Posición en un plano** como función extra donde haya ≥3 nodos (trilateración / centroide ponderado), con círculo de incertidumbre y limitada a la zona detectada | Precisión BLE en interiores: 2-5 m; el cuerpo del niño atenúa la señal. Pedido del profesor |
 
 ---
 
@@ -40,6 +46,10 @@ Cerrar esa consola (o Ctrl+C) apaga la API.
 SafeBand.api\
 ├── SafeBand.api.slnx              ← la solución
 ├── MANUAL.md                      ← este manual
+├── firmware\                      ← código de los ESP32 (VS Code + ESP-IDF v6.0.2)
+│   ├── .gitignore                 ← no sube build\ ni sdkconfig
+│   ├── pulsera\                   ← pulsera simulada con un ESP32 clásico
+│   └── nodo\                      ← nodo receptor (un mismo programa para nodo-1, nodo-2...)
 └── SafeBand.api\                  ← el proyecto
     ├── Program.cs                 ← punto de arranque de la API
     ├── appsettings.json           ← configuración general
@@ -48,6 +58,10 @@ SafeBand.api\
     ├── SafeBand.api.http          ← peticiones de prueba desde VS
     ├── Properties\
     │   └── launchSettings.json    ← puertos y perfiles de arranque (http / https)
+    ├── wwwroot\                   ← FRONTEND (la API lo sirve en "/")
+    │   ├── index.html             ← estructura de la página
+    │   ├── app.js                 ← lógica: pide datos a la API y los muestra
+    │   └── styles.css             ← diseño
     ├── Contracts\
     │   └── LecturaContracts.cs    ← forma del JSON que entra y sale de /api/lecturas
     ├── Endpoints\
@@ -163,6 +177,16 @@ Perfiles de arranque. Al presionar F5 se abre el navegador en `/swagger` (`launc
 |---|---|
 | `http` | `http://localhost:5213` |
 | `https` | `https://localhost:7001` (y también `http://localhost:5213`) |
+| `red-local (ESP32)` | `http://0.0.0.0:5213` → escucha en **toda la red**, no solo en `localhost`. Es el que se usa para que un ESP32 alcance la API |
+
+**Probar con el ESP32 en la red local:**
+1. PC y ESP32 deben estar en la **misma red WiFi** (el ESP32 solo usa **2.4 GHz**; la PC puede estar en 5 GHz del mismo router).
+2. Ejecutar la API con el perfil **red-local (ESP32)** (selector junto al botón ▶ de VS).
+3. La primera vez, Windows pregunta si permite el acceso por el firewall → **Permitir en redes privadas**.
+4. IP de la PC: `ipconfig` → *Dirección IPv4* del adaptador WiFi. La URL del nodo queda `http://<esa-IP>:5213/api/lecturas` (`menuconfig` → SafeBand - Nodo).
+5. Comprobar desde el celular (misma red): abrir `http://<IP>:5213/` → debe verse la página de lecturas. Si no carga, es el firewall o la red.
+
+La IP de la PC puede cambiar si se reconecta o se reinicia el router.
 
 Se administran con: clic derecho al proyecto → **Manage NuGet Packages…**
 
@@ -336,6 +360,135 @@ Las validaciones de campos (`[Required]`, `[Range]`) están como atributos en `C
 
 ---
 
+## 6b. Frontend (página de lecturas)
+
+**Abrir:** con la API corriendo, ir a `https://localhost:7001/` (o `http://localhost:5213/`).
+
+### Por qué está en `wwwroot\`
+ASP.NET Core sirve automáticamente los archivos de `wwwroot\` gracias a dos líneas en `Program.cs`:
+```csharp
+app.UseDefaultFiles();   // "/" → index.html
+app.UseStaticFiles();    // sirve los archivos de wwwroot
+```
+Ventajas: la página y la API están en la misma dirección (no hace falta configurar CORS) y al desplegar en Azure se suben juntas.
+
+### Archivos
+| Archivo | Qué hace |
+|---|---|
+| `index.html` | Estructura: aviso de error (oculto), tarjeta "Última lectura", tabla "Historial" |
+| `app.js` | Hace `fetch("/api/lecturas?limit=50")` al cargar y **cada 5 segundos**. La primera lectura del arreglo es la más reciente |
+| `styles.css` | Colores y diseño. Se adapta a celular (la tabla tiene scroll horizontal) |
+
+### Qué muestra
+- **Última lectura:** RSSI grande, nivel de señal (fuerte ≥ -60, media ≥ -75, débil < -75 dBm), fecha/hora local, pulsera (y alumno si tiene), nodo y zona, y etiquetas de estado.
+- **Historial:** tabla con las últimas 50 lecturas.
+- **Etiquetas de estado:** `Puesta` (verde) / `Quitada` (naranja), `SOS` (rojo), `Batería baja` (naranja).
+
+### Estados (requisito del checkpoint)
+| Estado | Qué se ve |
+|---|---|
+| Cargando | "Cargando…" al abrir la página |
+| Sin datos | "Sin datos todavía. Esperando la primera lectura del nodo…" |
+| Error de conexión | Aviso rojo arriba "No se pudo conectar con la API…". Se conservan los últimos datos y se reintenta cada 5 s; al volver la API, el aviso desaparece solo |
+
+### Detalles técnicos
+- La hora llega en UTC (`...Z`) y `toLocaleString("es-MX")` la convierte a la hora local del navegador.
+- Los datos se insertan con `textContent` (no `innerHTML`) para que ningún texto se interprete como código (seguridad).
+- `API_LECTURAS` y `INTERVALO_MS` están al inicio de `app.js` por si hay que cambiarlos.
+
+---
+
+## 6c. Firmware (ESP32)
+
+**Herramientas:** VS Code + extensión ESP-IDF, **ESP-IDF v6.0.2** (instalado en `C:\esp\v6.0.2\esp-idf`).
+**Placas:** 3 × ESP32 clásico ("ESP32 WiFi+BT SoC Inside"). LED integrado en GPIO 2, botón BOOT en GPIO 0.
+
+### Plan de hardware de prueba
+| Placa | Firmware | Papel |
+|---|---|---|
+| ESP32 #1 | `firmware\pulsera` | Simula la pulsera `SB-0001` |
+| ESP32 #2 | `firmware\nodo` | `nodo-1` en "Salón 3°A" |
+| ESP32 #3 | `firmware\nodo` (mismo programa) | `nodo-2` en "Patio" (hay que darlo de alta en la BD) |
+
+**Un programa por *tipo* de dispositivo, no por dispositivo:** todos los nodos usan `firmware\nodo`; solo cambia el código del nodo al grabar (`menuconfig`). Lo mismo aplicará a las terminales de tienda y de recogida cuando lleguen.
+
+### `firmware\pulsera` — pulsera simulada
+Anuncia por BLE su nombre (`SB-0001`) y su estado. No se conecta a WiFi.
+
+| Archivo | Qué es |
+|---|---|
+| `CMakeLists.txt` | Define el proyecto ESP-IDF |
+| `sdkconfig.defaults` | Activa Bluetooth con NimBLE, solo BLE |
+| `main\main.c` | El programa |
+| `main\CMakeLists.txt` | Archivos y componentes que usa (`bt`, `nvs_flash`, `esp_driver_gpio`) |
+| `main\Kconfig.projbuild` | Opción configurable: **identificador de la pulsera** (default `SB-0001`). Se cambia en `idf.py menuconfig` → *SafeBand - Pulsera* |
+
+**Conexiones para simular (sin hardware extra):**
+| Función real | Simulación | Pin |
+|---|---|---|
+| Botón SOS | Botón **BOOT** presionado **2 s** → SOS activo **30 s** | GPIO 0 |
+| Reed switch (puesta) | **Jumper a GND** = puesta; sin jumper = quitada | GPIO 25 |
+| Batería baja | **Jumper a GND** = batería baja | GPIO 26 |
+| LED de estado | Fijo = SOS · parpadeo = quitada · apagado = normal | GPIO 2 |
+
+**Qué anuncia (máx. 31 bytes por anuncio BLE):**
+- **Nombre:** `SB-0001` → así el nodo sabe qué pulsera es.
+- **Manufacturer data (4 bytes):** `FF FF 01 EE`
+  - `FF FF`: ID de compañía reservado para pruebas.
+  - `01`: versión del formato.
+  - `EE`: byte de estado → bit0 = puesta, bit1 = SOS, bit2 = batería baja.
+  - Ejemplos: `01` = puesta normal · `00` = quitada · `03` = puesta + SOS · `05` = puesta + batería baja.
+
+**Intervalo de anuncio:** 500 ms normal; **100 ms durante SOS** (para que el nodo lo capte más rápido). El anuncio solo se reinicia cuando cambia el estado.
+
+**Por qué NimBLE y no Bluedroid:** NimBLE es el stack BLE ligero de ESP-IDF; usa menos memoria y es el mismo que usará la XIAO ESP32-C3.
+
+### Compilar y grabar (terminal de ESP-IDF en VS Code, dentro de `firmware\pulsera`)
+```
+idf.py set-target esp32      ← solo la primera vez
+idf.py build                 ← compilar
+idf.py -p COM5 flash monitor ← grabar y ver los mensajes (cambiar COM5 por tu puerto)
+```
+Salir del monitor: `Ctrl + ]`.
+
+### Verificar con el celular
+nRF Connect → **Scanner** → debe aparecer `SB-0001`. Al tocarlo se ve el *Manufacturer data* `0xFFFF 0x01XX`.
+
+### `firmware\nodo` — nodo receptor
+Escanea BLE, promedia el RSSI de cada pulsera en una ventana y manda **una lectura por pulsera** a la API por WiFi. El SOS se manda **de inmediato**.
+
+| Archivo | Qué es |
+|---|---|
+| `main\main.c` | El programa |
+| `main\Kconfig.projbuild` | Opciones configurables (ver abajo) |
+| `sdkconfig.defaults` | BLE (NimBLE), coexistencia WiFi+BLE y partición de 1.5 MB (con WiFi+BLE+HTTP el programa pesa 1.09 MB y no cabía en la de 1 MB) |
+
+**Configuración** (`idf.py menuconfig` → *SafeBand - Nodo*). Se guarda en `sdkconfig`, que **no se sube a GitHub** (ahí queda la contraseña del WiFi):
+
+| Opción | Ejemplo | Nota |
+|---|---|---|
+| Código del nodo | `nodo-1` / `nodo-2` | Debe existir en la tabla `Nodos`. Es lo único que cambia entre nodos |
+| SSID / contraseña WiFi | | El ESP32 solo conecta a redes de **2.4 GHz** |
+| URL de la API | `http://192.168.1.50:5213/api/lecturas` | Local: IP de la PC. Azure: `https://<app>.azurewebsites.net/api/lecturas` |
+| Ventana de promedio | `10` s | Cuánto acumula antes de mandar |
+
+**Cómo funciona (3 tareas):**
+| Tarea | Qué hace |
+|---|---|
+| NimBLE (escaneo) | Por cada anuncio, si el nombre empieza con `SB-` y el manufacturer data es `FF FF 01 EE`, suma el RSSI en una tabla (máx. 16 pulseras). Si trae SOS, lo pone en la cola de inmediato (máx. 1 aviso cada 5 s por pulsera) |
+| `tarea_ventana` | Cada ventana calcula el **promedio** por pulsera y lo pone en la cola |
+| `tarea_envio` | Saca de la cola y hace `POST /api/lecturas` con el JSON. Registra la respuesta y **cuántos ms tardó** (sirve para la prueba de latencia del checkpoint) |
+
+**Detalles de diseño:**
+- **Escaneo pasivo, sin filtro de duplicados:** la pulsera no responde a escaneos activos y se necesitan todos los anuncios para promediar.
+- **Escucha 50 ms de cada 100 ms:** deja tiempo de antena al WiFi (comparten la misma radio).
+- **Sin WiFi:** la lectura se descarta con un aviso. *Pendiente (mejora):* guardar en cola y reenviar con su hora original al reconectar (por eso la API acepta `timestamp`).
+- **Hora:** el nodo no manda `timestamp`; la asigna la API al recibir.
+
+**Mensajes del monitor:** `WiFi conectado, IP ...` · `Ventana: SB-0001 promedio -63 dBm (18 anuncios)` · `OK SB-0001 rssi=-63 (85 ms)` · `¡SOS de SB-0001!` · `La API rechazó ... HTTP 400`.
+
+---
+
 ## 7. Migraciones (crear y cambiar la base de datos)
 
 Una migración es un archivo de C# que describe un cambio en la base de datos (crear tablas, agregar columnas...). Funciona como un "commit" de la BD.
@@ -375,7 +528,41 @@ EF la crea sola en la BD y anota ahí cada migración aplicada. Así `Update-Dat
 
 ---
 
-## 8. Pendientes / siguientes pasos
+## 8. Git y GitHub
+
+| Qué | Valor |
+|---|---|
+| Repositorio en GitHub | https://github.com/FernandoSibaja/SafeBand |
+| Carpeta del repositorio local | `C:\SafeBand\SafeBand.api` |
+| Rama principal | `main` |
+| Cuenta para subir | `FernandoSibaja` (configurada en la URL del remoto: `https://FernandoSibaja@github.com/...`, porque en esta PC también hay sesión de otra cuenta) |
+
+`bin\`, `obj\` y `.vs\` no se suben (los excluye `.gitignore`).
+
+### Subir cambios (cada vez que algo funcione)
+
+**Terminal** (en `C:\SafeBand\SafeBand.api`):
+```
+git status                               ← ver qué cambió
+git add .                                ← elegir todos los cambios
+git commit -m "Agrega endpoint X"        ← guardar en tu PC con un mensaje
+git push                                 ← subir a GitHub
+```
+
+**Visual Studio:** View → Git Changes → escribir mensaje → **Commit All** → **Push** (↑).
+
+### Mensajes de commit
+Una línea corta que empieza con verbo y dice qué cambió: `Agrega tabla Alumnos`, `Corrige validación de RSSI`. Evitar `cambios`, `ya funciona`.
+
+### Problema conocido
+`403 Permission denied to onitsibaja-crypto` → Git usó la otra cuenta guardada en la PC. Se resolvió con:
+```
+git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeBand.git
+```
+
+---
+
+## 9. Pendientes / siguientes pasos
 
 - [x] Crear proyecto ASP.NET Core Web API (.NET 10, Minimal API)
 - [x] Instalar paquetes de EF Core
@@ -391,12 +578,24 @@ EF la crea sola en la BD y anota ahí cada migración aplicada. Así `Update-Dat
 - [x] Endpoint `POST /api/lecturas` (guardar)
 - [x] Endpoint `GET /api/lecturas` (consultar)
 - [x] Probar con Swagger (POST válido → 201, POST con `rssi: 25` → 400, GET → 200 con 2 lecturas)
+- [x] Subir a GitHub
+- [x] Frontend: página con última lectura, historial y estados cargando / sin datos / error
+- [x] Firmware de la pulsera simulada (compila; falta grabar y probar con nRF Connect)
+- [x] Firmware del nodo (BLE → promedio → WiFi → POST) — compila; falta grabar y probar
+- [ ] Alta de zona "Patio" y `nodo-2` en la BD
+- [ ] API escuchando en la red local (para que el ESP32 la alcance)
+- [x] Nodo enviando lecturas reales a la API por WiFi (red local)
+- [ ] Desplegar en Azure (App Service + Azure SQL)
+- [ ] **Pedido del profesor:** prueba de alcance BLE (modo calibración en el nodo; 1-20 m, con pared y con cuerpo) → obtener `RSSI_a_1m` y `n`
+- [ ] **Pedido del profesor:** triangulación → X/Y en `Nodos`, cálculo de posición en la API, `GET /api/ubicaciones`, página de mapa con marcadores
+- [ ] Prototipo alfa: eventos + latido, guardar y reenviar sin WiFi, nodos puente con ESP-NOW
+- [ ] Pruebas del checkpoint: 10 envíos, latencia, dato incorrecto, pérdida de conexión
 - [ ] Endpoints de administración: alumnos, pulseras (asignar a alumno), nodos, zonas
 - [ ] Después: alumnos, tutores, grupos, alertas, tienda, recogida, PWA
 
 ---
 
-## 9. Bitácora
+## 10. Bitácora
 
 | Fecha | Qué se hizo |
 |---|---|
@@ -412,3 +611,9 @@ EF la crea sola en la BD y anota ahí cada migración aplicada. Así `Update-Dat
 | 2026-09-29 | Migración `AgregarAlumnos` aplicada. Los datos existentes se conservaron (la pulsera `SB-0001` quedó con `AlumnoId` = null). |
 | 2026-09-29 | Endpoints `POST` y `GET /api/lecturas` con validación y errores claros. Instalado Swagger UI (F5 abre `/swagger`). Quitados `/weatherforecast` y la redirección a HTTPS. Probado: 1 lectura válida guardada (id 1) y 5 casos de error → 400. |
 | 2026-09-29 | Probado por Fernando en Swagger: POST válido (id 2) → 201; `rssi: 25` → 400; GET → 200 con las 2 lecturas, más reciente primero. |
+| 2026-09-29 | Creado repositorio Git (rama `main`) y subido a GitHub `FernandoSibaja/SafeBand`. Resuelto error 403 por cuenta equivocada. Agregada sección Git al manual. |
+| 2026-09-29 | Frontend en `wwwroot\` (index.html, app.js, styles.css) servido por la API en `/`. Se actualiza cada 5 s. Probado: muestra las 2 lecturas; al apagar la API aparece el aviso de error y conserva los datos. |
+| 2026-09-29 | Decidido usar los 3 ESP32 clásicos: 1 pulsera simulada + 2 nodos. Creado `firmware\pulsera` (NimBLE, anuncia `SB-0001` + byte de estado; BOOT = SOS, jumpers = puesta / batería baja). Compila con ESP-IDF v6.0.2 sin errores. |
+| 2026-09-30 | Creado `firmware\nodo` (un solo programa para todos los nodos): escanea `SB-*`, promedia RSSI por ventana de 10 s, POST a la API; SOS inmediato. Compila; partición ampliada a 1.5 MB. |
+| 2026-09-30 | Nodo conectado: muestra el motivo de desconexión WiFi; perfil `red-local (ESP32)` en la API. Problemas resueltos: SSID mal escrito, IP de ejemplo, red Pública en Windows, punto final en la URL (404). Lecturas reales llegando. |
+| 2026-10-01 | Decisiones de arquitectura: BLE en pulsera, WiFi/ESP-NOW en nodos, un nodo por zona, eventos + latido a futuro, seguir con ESP-IDF, mapa con posición. Pedidos del profesor anotados: alcance BLE y triangulación. |

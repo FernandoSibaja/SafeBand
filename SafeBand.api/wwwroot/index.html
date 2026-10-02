@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SafeBand · Lecturas</title>
+    <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+    <header>
+        <h1>SafeBand</h1>
+        <p class="subtitulo">Monitoreo de pulseras · prueba de concepto</p>
+    </header>
+
+    <main>
+        <!-- Aviso de error: oculto hasta que falle la conexión -->
+        <div id="error" class="aviso aviso-error" hidden></div>
+
+        <!-- Última lectura -->
+        <section class="tarjeta">
+            <h2>Última lectura</h2>
+            <div id="ultima">
+                <p class="estado">Cargando…</p>
+            </div>
+        </section>
+
+        <!-- Historial -->
+        <section class="tarjeta">
+            <div class="encabezado-seccion">
+                <h2>Historial</h2>
+                <span id="actualizado" class="actualizado"></span>
+            </div>
+            <div class="tabla-contenedor">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Fecha y hora</th>
+                            <th>Nodo</th>
+                            <th>Zona</th>
+                            <th>Pulsera</th>
+                            <th>RSSI</th>
+                            <th>Estado</th>
+                        </tr>
+                    </thead>
+                    <tbody id="historial">
+                        <tr><td colspan="7" class="estado">Cargando…</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </main>
+
+    <script src="app.js"></script>
+</body>
+</html>

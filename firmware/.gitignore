@@ -1,0 +1,5 @@
+# Archivos generados por ESP-IDF (se regeneran al compilar)
+build/
+managed_components/
+sdkconfig
+sdkconfig.old

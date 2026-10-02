@@ -1,0 +1,10 @@
+menu "SafeBand - Pulsera"
+
+    config SAFEBAND_PULSERA_ID
+        string "Identificador BLE de la pulsera"
+        default "SB-0001"
+        help
+            Nombre que la pulsera anuncia por BLE. Debe existir en la tabla Pulseras
+            (campo IdentificadorBle) para que la API acepte sus lecturas.
+
+endmenu

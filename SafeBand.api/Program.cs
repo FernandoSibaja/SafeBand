@@ -57,6 +57,10 @@ if (app.Environment.IsDevelopment())
     await DbSeeder.SembrarAsync(db);
 }
 
+// Frontend: sirve los archivos de wwwroot/ (index.html en "/")
+app.UseDefaultFiles();
+app.UseStaticFiles();
+
 // ---------- 3. Endpoints ----------
 
 app.MapLecturas();   // /api/lecturas  (Endpoints/LecturasEndpoints.cs)
