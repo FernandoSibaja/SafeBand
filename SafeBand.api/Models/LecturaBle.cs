@@ -17,6 +17,12 @@ public class LecturaBle
     public int PulseraId { get; set; }
     public Pulsera Pulsera { get; set; } = null!;
 
+    // Qué alumno traía la pulsera EN ESE MOMENTO (se copia al recibir la lectura).
+    // Así el historial no cambia si después la pulsera se le da a otro niño.
+    // null = la pulsera no estaba asignada a nadie.
+    public int? AlumnoId { get; set; }
+    public Alumno? Alumno { get; set; }
+
     /// <summary>Intensidad de señal en dBm (negativo; más cerca de 0 = más cerca del nodo).</summary>
     public int Rssi { get; set; }
 

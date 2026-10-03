@@ -68,6 +68,7 @@ SafeBand.api\
     │   │   └── vistas\            ← una pantalla por archivo
     │   │       ├── login.js       ← inicio de sesión
     │   │       ├── vivo.js        ← "En vivo": última detección + historial
+    │   │       ├── alumnos.js     ← "Alumnos": lista, búsqueda, formulario con pulsera, baja/reactivar
     │   │       └── pendiente.js   ← temporal para secciones aún no construidas
     │   ├── monitor.html           ← página simple de lecturas SIN login (respaldo para el checkpoint)
     │   ├── monitor.js
@@ -393,6 +394,7 @@ Cada vez que un nodo detecta una pulsera. Es el dato base de todo el sistema: de
 | `Id` | **long** | Llave primaria. `long` en vez de `int` porque esta tabla crece muy rápido (varias lecturas por segundo por pulsera) |
 | `NodoId` / `Nodo` | int / navegación | Qué nodo hizo la detección (llave foránea → `Nodos`) |
 | `PulseraId` / `Pulsera` | int / navegación | Qué pulsera fue detectada (llave foránea → `Pulseras`) |
+| `AlumnoId` / `Alumno` | int? / navegación | **Qué alumno traía la pulsera en ese momento.** Se copia de la pulsera al recibir la lectura y ya no cambia. `null` = la pulsera no estaba asignada |
 | `Rssi` | int | Intensidad de señal en dBm. Siempre negativo: -40 = muy cerca, -90 = lejos |
 | `Puesta` | bool | Reed switch: `true` = pulsera cerrada en la muñeca |
 | `Sos` | bool | Botón de pánico presionado |
@@ -400,6 +402,8 @@ Cada vez que un nodo detecta una pulsera. Es el dato base de todo el sistema: de
 | `Timestamp` | DateTime | Hora de la detección en **UTC**. La manda el ESP32 (para lecturas guardadas sin internet); si no llega, la pone la API |
 
 **¿Por qué UTC?** Es una hora universal sin zona horaria. Evita confusiones con horario de verano o si el servidor de Azure está en otro país. El frontend la convierte a hora local de México al mostrarla.
+
+**¿Por qué la lectura guarda su propio `AlumnoId`?** Para que el historial sea fiel. Si solo se guardara la pulsera, el alumno se buscaría por *quién la tiene hoy*: si `SB-0001` pasa de Ana a Luis, las lecturas viejas de Ana aparecerían como de Luis. Guardando el alumno en cada lectura (como una "foto"), cada registro recuerda de quién era la pulsera en ese momento. `GET /api/lecturas` muestra el alumno guardado en la lectura, no el dueño actual. Índice `(AlumnoId, Timestamp)` para consultas como "¿dónde estuvo Ana hoy?".
 
 **¿Por qué `Nodo` y `Pulsera` no tienen una lista `Lecturas`?** A propósito. Serían millones de registros; si alguien accediera a `pulsera.Lecturas` por error, cargaría todo el historial a memoria. Las lecturas se consultan siempre directo desde la tabla con filtros (por pulsera, por fecha, con límite).
 
@@ -671,7 +675,32 @@ Configuración física de la escuela. **Por ahora abiertos (sin login).**
 | Sección | Rol | Estado |
 |---|---|---|
 | En vivo | Todos | ✅ Lista |
-| Alumnos, Pulseras, Tutores, Zonas y nodos | Administrador | ⏳ Pendientes (muestran aviso; mientras tanto, Swagger) |
+| Alumnos | Administrador | ✅ Lista |
+| Pulseras, Tutores, Zonas y nodos | Administrador | ⏳ Pendientes (muestran aviso; mientras tanto, Swagger) |
+
+### Pantalla "Alumnos" (`js\vistas\alumnos.js`)
+| Función | Cómo | API |
+|---|---|---|
+| Lista | Tabla: nombre (apellidos, nombres), matrícula, edad (calculada), pulsera | `GET /api/alumnos` |
+| Buscar | Por nombre o matrícula, al instante, sin importar mayúsculas ni acentos ("lopez" encuentra "López") | — (filtra en el navegador) |
+| Ver dados de baja | Casilla "Mostrar dados de baja" (aparecen atenuados con la etiqueta "Dado de baja") | `?incluirInactivos=true` |
+| Agregar / editar | Botón "Agregar alumno" o "Editar" → **panel lateral** con el formulario | `POST` / `PUT /api/alumnos` |
+| **Pulsera en el mismo formulario** | Selector: "Sin pulsera", la que tiene ahora, las **libres**, o "Registrar una pulsera nueva…" (pide su identificador `SB-XXXX`) | Nueva: `POST /api/pulseras` y luego el alumno con su `pulseraId` |
+| Dar de baja | Botón en el formulario, con **confirmación** que explica que no se borra | `DELETE /api/alumnos/{id}` |
+| Reactivar | Botón en el formulario de un alumno dado de baja | `POST /api/alumnos/{id}/reactivar` |
+
+**Detalles:** errores junto al campo que falló (validación de la API o reglas como "matrícula repetida"); aviso breve al guardar ("Alumno agregado", "Cambios guardados"); cerrar el panel con Esc, la X, Cancelar o tocando fuera; en celular la tabla se vuelve tarjetas.
+
+**Cambios en la API para esta pantalla:**
+- `GuardarAlumnoRequest` tiene `pulseraId` (opcional). El alumno y su pulsera se guardan **en una sola operación** (`SaveChangesAsync` único): o se guarda todo o nada.
+  - `pulseraId` = otra pulsera → la anterior queda **libre** y se asigna la nueva.
+  - `pulseraId` = `null` en `PUT` → el alumno queda sin pulsera (la que tenía queda libre).
+  - Mismas reglas de seguridad: no se toma la pulsera de otro niño (409), ni una dada de baja (400), ni se asigna a un alumno dado de baja (400).
+- `AlumnoResponse.pulsera` ahora es un objeto `{ id, identificadorBle }` (o `null`), en vez de una lista de textos.
+- Nuevo `POST /api/alumnos/{id}/reactivar`.
+- Si se crea una pulsera nueva pero falla el guardado del alumno, la pulsera queda registrada y seleccionada, para no registrarla dos veces al reintentar.
+
+**Componentes reutilizables nuevos en `ui.js`:** `avisoBreve(texto)`, `confirmar({ titulo, mensaje, aceptar, peligro })` (diálogo nativo `<dialog>`, devuelve true/false), `edad("AAAA-MM-DD")`.
 
 **Seguridad en el frontend:** todos los datos se insertan con `textContent` (función `el()` de `ui.js`), nunca con `innerHTML`, para que un nombre como `<script>` no se ejecute.
 
@@ -842,6 +871,7 @@ EF la crea sola en la BD y anota ahí cada migración aplicada. Así `Update-Dat
 | `20260930025056_AgregarAlumnos` | Tabla `Alumnos`; columna `AlumnoId` (nullable) en `Pulseras` con llave foránea `FK_Pulseras_Alumnos_AlumnoId` |
 | `20261002075518_AgregarTutores` | Tablas `Tutores` (correo único) y `TutoresAlumnos` (llave compuesta, borrado en cascada) |
 | `20261002081042_AgregarUsuarios` | Tablas de Identity (`AspNetUsers`, `AspNetRoles`, `AspNetUserRoles`...) con `NombreMostrar`, `Activo`, `FechaAlta` y `TutorId` en `AspNetUsers` |
+| `20261003213226_GuardarAlumnoEnLecturas` | Columna `AlumnoId` (nullable) en `LecturasBle` con llave foránea a `Alumnos` (Restrict) e índice `(AlumnoId, Timestamp)` |
 
 ---
 
@@ -934,6 +964,9 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 - [ ] **Pedido del profesor:** prueba de alcance BLE (modo calibración en el nodo; 1-20 m, con pared y con cuerpo) → obtener `RSSI_a_1m` y `n`
 - [ ] **Pedido del profesor:** triangulación → X/Y en `Nodos`, cálculo de posición en la API, `GET /api/ubicaciones`, página de mapa con marcadores
 - [ ] Prototipo alfa: eventos + latido, guardar y reenviar sin WiFi, nodos puente con ESP-NOW
+- [ ] **Historial correcto al reasignar pulseras:** guardar `AlumnoId` en cada `LecturaBle` al recibirla
+  - [x] Modelo, `AppDbContext` y endpoints de lecturas
+  - [x] Migración `GuardarAlumnoEnLecturas` aplicada. **No se rellenaron** las 95 lecturas existentes: eran del 2026-09-30, cuando `SB-0001` no tenía dueño; asignarles el dueño actual habría sido falso. Quedan "sin asignar", que es lo correcto
 - [ ] Pruebas del checkpoint: 10 envíos, latencia, dato incorrecto, pérdida de conexión
 - [ ] **Usuarios y roles** (decidido 2026-10-02: la escuela vincula padres con código de invitación):
   - [x] 1a. Modelos `Tutor` y `TutorAlumno`
@@ -950,8 +983,8 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
   - [ ] 4. Filtrar endpoints por rol (el padre solo ve a sus hijos)
   - [ ] 5. Frontend:
     - [x] Login, estructura del panel (menú, usuario, cerrar sesión), vista "En vivo"
-    - [ ] Alumnos
-    - [ ] Pulseras
+    - [x] Alumnos (con asignación de pulsera en el mismo formulario y reactivar)
+    - [ ] Pulseras (lista general, baja de pulseras perdidas)
     - [ ] Tutores
     - [ ] Zonas y nodos
     - [ ] Vista de padre (después del paso 3)
@@ -995,3 +1028,5 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-02 | Paso 2b: sesión con cookie (`SafeBand.Sesion`: HttpOnly, SameSite Strict, 7 días). Endpoints `/api/auth/login`, `/logout`, `/yo`. Sin sesión → 401, sin permiso → 403. Probados con un correo inexistente (para no sumar intentos a la cuenta real): `/yo` sin sesión 401, login incorrecto 401 con mensaje genérico, correo inválido 400, logout 204. |
 | 2026-10-02 | Paso 2c: política `SoloAdministrador` en alumnos, pulseras, tutores, zonas y nodos. Lecturas (POST y GET) abiertas temporalmente con `.AllowAnonymous()` para no romper el ESP32 ni la página del checkpoint. Probado sin sesión: administración 401, lecturas 200/400, página y Swagger 200. Falta probar 403 (cuando exista una cuenta de Padre). |
 | 2026-10-02 | Frontend profesional (paso 5, parte 1): panel con login, menú por rol y vista "En vivo". Colores claros con azul, tipografía Atkinson Hyperlegible, motivo de ondas BLE. Revisado en escritorio y celular. La página anterior pasó a `monitor.html` (sin login, respaldo del checkpoint). |
+| 2026-10-03 | Pantalla "Alumnos": lista con búsqueda, panel lateral para agregar/editar con la pulsera en el mismo formulario (libre o nueva), baja con confirmación y reactivar. API: alumno + pulsera en una sola operación, `AlumnoResponse.pulsera` como objeto, `POST /api/alumnos/{id}/reactivar`. Revisado en escritorio y celular con datos simulados en el navegador. Detectado: el historial de lecturas depende de la asignación actual de la pulsera (anotado en pendientes). |
+| 2026-10-03 | Historial fiel: cada lectura guarda el `AlumnoId` que tenía la pulsera al recibirse; `GET /api/lecturas` muestra ese alumno. Migración `GuardarAlumnoEnLecturas` aplicada. Las 95 lecturas previas quedan sin alumno (la pulsera no tenía dueño en ese momento). Alumnos dados de alta por Fernando desde el panel: Fernanda Arellano (SB-0001), Kevin Osmar (SB-002), Jason Hamed (SB-003). |

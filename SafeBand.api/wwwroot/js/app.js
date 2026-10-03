@@ -10,6 +10,7 @@ import { api, ErrorApi } from "./api.js";
 import { el, icono, logo } from "./ui.js";
 import { vistaLogin } from "./vistas/login.js";
 import { vistaVivo } from "./vistas/vivo.js";
+import { vistaAlumnos } from "./vistas/alumnos.js";
 import { vistaPendiente } from "./vistas/pendiente.js";
 
 const raiz = document.getElementById("app");
@@ -17,7 +18,7 @@ const raiz = document.getElementById("app");
 // Secciones del menú: qué roles pueden verlas y qué vista dibujan
 const SECCIONES = [
     { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador", "Maestro", "Padre"], vista: vistaVivo },
-    { ruta: "alumnos",  titulo: "Alumnos",         icono: "alumnos",  roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Alumnos", "Alta, edición y baja de alumnos.") },
+    { ruta: "alumnos",  titulo: "Alumnos",         icono: "alumnos",  roles: ["Administrador"], vista: vistaAlumnos },
     { ruta: "pulseras", titulo: "Pulseras",        icono: "pulseras", roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Pulseras", "Alta de pulseras y asignación a cada alumno.") },
     { ruta: "tutores",  titulo: "Tutores",         icono: "tutores",  roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Tutores", "Padres y tutores, y qué alumnos puede ver cada uno.") },
     { ruta: "zonas",    titulo: "Zonas y nodos",   icono: "zonas",    roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Zonas y nodos", "Áreas de la escuela y los receptores de cada una.") },

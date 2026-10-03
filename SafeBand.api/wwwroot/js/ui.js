@@ -83,6 +83,46 @@ export function etiquetasEstado(l) {
         l.bateriaBaja && el("span", { class: "etiqueta alerta" }, "Batería baja"));
 }
 
+// ---------- Aviso breve y confirmación ----------
+
+/** Aviso que aparece abajo unos segundos, ej. "Alumno agregado". */
+export function avisoBreve(texto) {
+    document.querySelector(".aviso-breve")?.remove();
+    const aviso = el("div", { class: "aviso-breve", role: "status" }, texto);
+    document.body.append(aviso);
+    setTimeout(() => aviso.remove(), 3000);
+}
+
+/**
+ * Pregunta antes de una acción importante. Devuelve true si la persona confirma.
+ *   if (await confirmar({ titulo, mensaje, aceptar: "Dar de baja", peligro: true })) ...
+ */
+export function confirmar({ titulo, mensaje, aceptar = "Aceptar", peligro = false }) {
+    return new Promise((resolver) => {
+        const dialogo = el("dialog", { class: "confirmar", "aria-labelledby": "confirmar-titulo" },
+            el("div", { class: "contenido-dialogo" },
+                el("h2", { id: "confirmar-titulo" }, titulo),
+                el("p", {}, mensaje)),
+            el("div", { class: "botones" },
+                el("button", { type: "button", class: "boton boton-sutil", onclick: () => cerrar(false) }, "Cancelar"),
+                el("button", { type: "button", class: peligro ? "boton boton-peligro" : "boton boton-primario", onclick: () => cerrar(true) }, aceptar)));
+        function cerrar(valor) { dialogo.close(); dialogo.remove(); resolver(valor); }
+        dialogo.addEventListener("cancel", (e) => { e.preventDefault(); cerrar(false); });   // tecla Esc
+        document.body.append(dialogo);
+        dialogo.showModal();
+    });
+}
+
+/** Edad en años a partir de "AAAA-MM-DD". */
+export function edad(fecha) {
+    if (!fecha) return null;
+    const [a, m, d] = fecha.split("-").map(Number);
+    const hoy = new Date();
+    let anios = hoy.getFullYear() - a;
+    if (hoy.getMonth() + 1 < m || (hoy.getMonth() + 1 === m && hoy.getDate() < d)) anios--;
+    return anios;
+}
+
 // ---------- Íconos (trazos simples, heredan el color del texto) ----------
 
 const ICONOS = {
@@ -93,6 +133,8 @@ const ICONOS = {
     zonas: '<path d="M4 5h7v6H4zM13 5h7v14h-7zM4 13h7v6H4z"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     salir: '<path d="M14 5h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/>',
+    mas: '<path d="M12 5v14M5 12h14"/>',
+    cerrar: '<path d="M6 6l12 12M18 6 6 18"/>',
 };
 
 export function icono(nombre, tam = 20) {

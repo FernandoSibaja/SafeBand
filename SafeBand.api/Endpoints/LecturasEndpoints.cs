@@ -43,6 +43,7 @@ public static class LecturasEndpoints
         {
             NodoId = nodo.Id,
             PulseraId = pulsera.Id,
+            AlumnoId = pulsera.AlumnoId,   // "foto" de quién traía la pulsera en este momento
             Rssi = req.Rssi!.Value,
             Puesta = req.Puesta,
             Sos = req.Sos,
@@ -79,8 +80,8 @@ public static class LecturasEndpoints
             .Take(cantidad)
             .Select(l => new LecturaResponse(
                 l.Id, l.Nodo.Codigo, l.Nodo.Zona.Nombre, l.Pulsera.IdentificadorBle,
-                l.Pulsera.Alumno == null ? null
-                    : l.Pulsera.Alumno.Nombres + " " + l.Pulsera.Alumno.ApellidoPaterno,
+                // El alumno guardado en la lectura (no el dueño actual de la pulsera)
+                l.Alumno == null ? null : l.Alumno.Nombres + " " + l.Alumno.ApellidoPaterno,
                 l.Rssi, "dBm", l.Puesta, l.Sos, l.BateriaBaja,
                 DateTime.SpecifyKind(l.Timestamp, DateTimeKind.Utc)))  // marcar como UTC para que el JSON lleve "Z"
             .ToListAsync();

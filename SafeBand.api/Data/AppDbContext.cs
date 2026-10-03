@@ -108,6 +108,11 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
                 .OnDelete(DeleteBehavior.Restrict);
             e.HasOne(l => l.Pulsera).WithMany().HasForeignKey(l => l.PulseraId)
                 .OnDelete(DeleteBehavior.Restrict);
+            // El alumno que traía la pulsera en ese momento (historial fijo)
+            e.HasOne(l => l.Alumno).WithMany().HasForeignKey(l => l.AlumnoId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Para consultas como "¿dónde estuvo Ana hoy?"
+            e.HasIndex(l => new { l.AlumnoId, l.Timestamp });
         });
     }
 }

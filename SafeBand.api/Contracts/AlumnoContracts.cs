@@ -3,9 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace SafeBand.api.Contracts;
 
 /// <summary>
-/// JSON para dar de alta o editar un alumno. Ejemplo:
+/// JSON para dar de alta o editar un alumno (y asignarle su pulsera en la misma operación). Ejemplo:
 /// { "nombres": "Ana Sofía", "apellidoPaterno": "López", "apellidoMaterno": "García",
-///   "fechaNacimiento": "2018-05-14", "matricula": "A-0001" }
+///   "fechaNacimiento": "2018-05-14", "matricula": "A-0001", "pulseraId": 1 }
 /// </summary>
 public record GuardarAlumnoRequest(
     [property: Required(ErrorMessage = "El campo 'nombres' es obligatorio.")]
@@ -22,7 +22,13 @@ public record GuardarAlumnoRequest(
     DateOnly? FechaNacimiento = null,
 
     [property: StringLength(30, ErrorMessage = "El campo 'matricula' admite máximo 30 caracteres.")]
-    string? Matricula = null);
+    string? Matricula = null,
+
+    // Pulsera que debe tener el alumno. null = sin pulsera (si tenía una, queda libre).
+    int? PulseraId = null);
+
+/// <summary>La pulsera activa de un alumno (solo puede tener una).</summary>
+public record PulseraResumen(int Id, string IdentificadorBle);
 
 /// <summary>JSON que devuelve la API al consultar un alumno.</summary>
 public record AlumnoResponse(
@@ -34,4 +40,4 @@ public record AlumnoResponse(
     string? Matricula,
     bool Activo,
     DateTime FechaAlta,
-    List<string> Pulseras);   // identificadores BLE de sus pulseras activas
+    PulseraResumen? Pulsera);
