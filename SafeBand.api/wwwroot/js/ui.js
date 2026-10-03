@@ -1,0 +1,125 @@
+// ============================================================
+// Ayudantes de interfaz que usan todas las vistas.
+// ============================================================
+
+/**
+ * Crea un elemento HTML. Los textos se insertan con textContent,
+ * así ningún dato que venga de la API se interpreta como código.
+ *   el("p", { class: "nota" }, "Hola")
+ *   el("button", { type: "button", onclick: () => ... }, "Guardar")
+ */
+export function el(etiqueta, props = {}, ...hijos) {
+    const e = document.createElement(etiqueta);
+    for (const [clave, valor] of Object.entries(props ?? {})) {
+        if (valor == null || valor === false) continue;
+        if (clave === "class") e.className = valor;
+        else if (clave.startsWith("on") && typeof valor === "function") e.addEventListener(clave.slice(2), valor);
+        else e.setAttribute(clave, valor === true ? "" : valor);
+    }
+    for (const h of hijos.flat()) {
+        if (h == null || h === false) continue;
+        e.append(h instanceof Node ? h : document.createTextNode(String(h)));
+    }
+    return e;
+}
+
+// ---------- Fechas (la API manda UTC; se muestran en hora local) ----------
+
+export const fechaHora = (iso) =>
+    new Date(iso).toLocaleString("es-MX", { dateStyle: "short", timeStyle: "medium" });
+
+export const hora = (iso) =>
+    new Date(iso).toLocaleTimeString("es-MX", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+// Si es de hoy, solo la hora; si no, también el día ("30/09 4:19:23 p.m.")
+export function cuando(iso) {
+    const f = new Date(iso);
+    if (f.toDateString() === new Date().toDateString()) return hora(iso);
+    return `${f.toLocaleDateString("es-MX", { day: "2-digit", month: "2-digit" })} ${hora(iso)}`;
+}
+
+export const esReciente = (iso) => Date.now() - new Date(iso).getTime() < 24 * 3600 * 1000;
+
+export function haceCuanto(iso) {
+    const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+    if (s < 5) return "justo ahora";
+    if (s < 60) return `hace ${s} s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `hace ${m} min`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `hace ${h} h`;
+    return fechaHora(iso);
+}
+
+// ---------- Señal (RSSI) ----------
+
+// 4 = muy cerca del nodo ... 0 = fuera de alcance. Referencia aproximada hasta calibrar.
+export function nivelSenal(rssi) {
+    if (rssi >= -60) return 4;
+    if (rssi >= -70) return 3;
+    if (rssi >= -80) return 2;
+    if (rssi >= -90) return 1;
+    return 0;
+}
+
+const TEXTO_NIVEL = ["Fuera de alcance", "Muy lejos del nodo", "Lejos del nodo", "Cerca del nodo", "Muy cerca del nodo"];
+export const textoSenal = (rssi) => TEXTO_NIVEL[nivelSenal(rssi)];
+
+export function barrasSenal(rssi, grande = false) {
+    const n = nivelSenal(rssi);
+    return el("span",
+        { class: grande ? "senal grande" : "senal", "data-nivel": n, role: "img", "aria-label": `${textoSenal(rssi)} (${rssi} dBm)` },
+        el("i"), el("i"), el("i"), el("i"));
+}
+
+// ---------- Estado de la pulsera ----------
+
+export function etiquetasEstado(l) {
+    return el("div", { class: "etiquetas" },
+        l.sos && el("span", { class: "etiqueta peligro" }, "SOS"),
+        l.puesta
+            ? el("span", { class: "etiqueta ok" }, "Puesta")
+            : el("span", { class: "etiqueta alerta" }, "Quitada"),
+        l.bateriaBaja && el("span", { class: "etiqueta alerta" }, "Batería baja"));
+}
+
+// ---------- Íconos (trazos simples, heredan el color del texto) ----------
+
+const ICONOS = {
+    vivo: '<path d="M3 12h4l2-6 4 12 2-6h6"/>',
+    alumnos: '<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.6 3.6-5.5 7-5.5s6.2 1.9 7 5.5"/>',
+    pulseras: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/>',
+    tutores: '<circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="10" r="2.5"/><path d="M3 19c.6-3 2.8-4.6 5.5-4.6S13.4 16 14 19M14.5 15c2.6-.4 5 .9 5.8 4"/>',
+    zonas: '<path d="M4 5h7v6H4zM13 5h7v14h-7zM4 13h7v6H4z"/>',
+    menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
+    salir: '<path d="M14 5h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/>',
+};
+
+export function icono(nombre, tam = 20) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("width", tam);
+    svg.setAttribute("height", tam);
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.8");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = ICONOS[nombre] ?? "";   // contenido fijo del código, nunca datos de la API
+    return svg;
+}
+
+// Logo: una pulsera anunciándose en ondas
+export function logo(tam = 28) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 32 32");
+    svg.setAttribute("width", tam);
+    svg.setAttribute("height", tam);
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML =
+        '<circle cx="16" cy="16" r="5" fill="#1D5FC2"/>' +
+        '<circle cx="16" cy="16" r="9.5" fill="none" stroke="#1D5FC2" stroke-width="2" opacity=".55"/>' +
+        '<circle cx="16" cy="16" r="14" fill="none" stroke="#1D5FC2" stroke-width="2" opacity=".25"/>';
+    return svg;
+}

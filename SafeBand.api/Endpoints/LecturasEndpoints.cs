@@ -12,8 +12,12 @@ public static class LecturasEndpoints
     {
         var grupo = app.MapGroup("/api/lecturas").WithTags("Lecturas BLE");
 
-        grupo.MapPost("/", Crear).WithSummary("Guarda una lectura enviada por un nodo ESP32");
-        grupo.MapGet("/", Listar).WithSummary("Últimas lecturas (?limit=1 = la más reciente)");
+        // TEMPORALMENTE ABIERTOS (sin sesión):
+        //   POST: lo usan los ESP32, que no inician sesión → se protegerá con una clave por nodo (paso 6).
+        //   GET:  lo usa la página de lecturas, que aún no tiene login → se protegerá en el paso 5
+        //         (y ahí el padre verá solo las lecturas de sus hijos).
+        grupo.MapPost("/", Crear).AllowAnonymous().WithSummary("Guarda una lectura enviada por un nodo ESP32");
+        grupo.MapGet("/", Listar).AllowAnonymous().WithSummary("Últimas lecturas (?limit=1 = la más reciente)");
     }
 
     // POST /api/lecturas

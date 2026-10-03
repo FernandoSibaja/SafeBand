@@ -13,7 +13,8 @@ public static class AlumnosEndpoints
 {
     public static void MapAlumnos(this WebApplication app)
     {
-        var grupo = app.MapGroup("/api/alumnos").WithTags("Alumnos");
+        var grupo = app.MapGroup("/api/alumnos").WithTags("Alumnos")
+            .RequireAuthorization(Politicas.SoloAdministrador);   // sin sesión → 401; sin rol → 403
 
         grupo.MapGet("/", Listar).WithSummary("Lista de alumnos (?incluirInactivos=true para ver también los dados de baja)");
         grupo.MapGet("/{id:int}", Obtener).WithSummary("Un alumno por su Id");

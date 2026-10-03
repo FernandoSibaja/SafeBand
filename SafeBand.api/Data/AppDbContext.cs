@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using SafeBand.api.Models;
 
@@ -5,8 +6,10 @@ namespace SafeBand.api.Data;
 
 /// <summary>
 /// Puente entre el código y SQL Server: define qué clases son tablas y cómo se configuran.
+/// Hereda de IdentityDbContext para incluir también las tablas de usuarios y roles
+/// (AspNetUsers, AspNetRoles, AspNetUserRoles...).
 /// </summary>
-public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
+public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbContext<Usuario>(options)
 {
     // Cada DbSet = una tabla
     public DbSet<Zona> Zonas => Set<Zona>();
@@ -20,6 +23,18 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
     // Reglas extra que EF no puede adivinar por convención
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
+        // Primero la configuración de Identity (tablas AspNet*); sin esta línea fallan las migraciones
+        base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<Usuario>(e =>
+        {
+            e.Property(u => u.NombreMostrar).HasMaxLength(150);
+            // Un registro de Tutor solo puede tener una cuenta
+            e.HasIndex(u => u.TutorId).IsUnique().HasFilter("[TutorId] IS NOT NULL");
+            e.HasOne(u => u.Tutor).WithMany().HasForeignKey(u => u.TutorId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<Zona>(e =>
         {
             e.Property(z => z.Nombre).HasMaxLength(100);

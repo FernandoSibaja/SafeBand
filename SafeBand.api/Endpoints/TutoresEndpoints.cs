@@ -13,7 +13,8 @@ public static class TutoresEndpoints
 {
     public static void MapTutores(this WebApplication app)
     {
-        var grupo = app.MapGroup("/api/tutores").WithTags("Tutores");
+        var grupo = app.MapGroup("/api/tutores").WithTags("Tutores")
+            .RequireAuthorization(Politicas.SoloAdministrador);
 
         grupo.MapGet("/", Listar).WithSummary("Lista de tutores con sus hijos (?incluirInactivos=true)");
         grupo.MapGet("/{id:int}", Obtener).WithSummary("Un tutor con sus hijos");

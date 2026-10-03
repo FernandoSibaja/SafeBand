@@ -59,19 +59,33 @@ SafeBand.api\
     ├── Properties\
     │   └── launchSettings.json    ← puertos y perfiles de arranque (http / https)
     ├── wwwroot\                   ← FRONTEND (la API lo sirve en "/")
-    │   ├── index.html             ← estructura de la página
-    │   ├── app.js                 ← lógica: pide datos a la API y los muestra
-    │   └── styles.css             ← diseño
+    │   ├── index.html             ← panel SafeBand (login + secciones)
+    │   ├── css\app.css            ← diseño del panel (colores, tipografía, estructura)
+    │   ├── js\
+    │   │   ├── app.js             ← arranque: sesión, menú, navegación entre secciones
+    │   │   ├── api.js             ← conexión con la API (JSON, cookie, mensajes de error)
+    │   │   ├── ui.js              ← ayudantes: crear elementos, fechas, barras de señal, íconos
+    │   │   └── vistas\            ← una pantalla por archivo
+    │   │       ├── login.js       ← inicio de sesión
+    │   │       ├── vivo.js        ← "En vivo": última detección + historial
+    │   │       └── pendiente.js   ← temporal para secciones aún no construidas
+    │   ├── monitor.html           ← página simple de lecturas SIN login (respaldo para el checkpoint)
+    │   ├── monitor.js
+    │   └── monitor.css
     ├── Contracts\
     │   ├── LecturaContracts.cs    ← forma del JSON que entra y sale de /api/lecturas
     │   ├── AlumnoContracts.cs     ← JSON de /api/alumnos
     │   ├── PulseraContracts.cs    ← JSON de /api/pulseras
-    │   └── TutorContracts.cs      ← JSON de /api/tutores
+    │   ├── TutorContracts.cs      ← JSON de /api/tutores
+    │   ├── ZonaNodoContracts.cs   ← JSON de /api/zonas y /api/nodos
+    │   └── AuthContracts.cs       ← JSON de inicio de sesión
     ├── Endpoints\
     │   ├── LecturasEndpoints.cs   ← POST y GET de /api/lecturas
     │   ├── AlumnosEndpoints.cs    ← administración de alumnos
     │   ├── PulserasEndpoints.cs   ← administración de pulseras y asignación a alumnos
-    │   └── TutoresEndpoints.cs    ← administración de tutores y vínculo con sus hijos
+    │   ├── TutoresEndpoints.cs    ← administración de tutores y vínculo con sus hijos
+    │   ├── ZonasNodosEndpoints.cs ← administración de zonas y nodos
+    │   └── AuthEndpoints.cs       ← iniciar sesión, cerrar sesión, ¿quién soy?
     ├── Data\
     │   ├── AppDbContext.cs        ← conexión entre los modelos y SQL Server
     │   └── DbSeeder.cs            ← datos de prueba (solo en tu PC)
@@ -82,6 +96,8 @@ SafeBand.api\
         ├── Alumno.cs
         ├── Tutor.cs
         ├── TutorAlumno.cs
+        ├── Usuario.cs             ← cuenta para iniciar sesión (Identity)
+        ├── Roles.cs               ← nombres de los roles
         ├── Pulsera.cs
         └── LecturaBle.cs
 ```
@@ -311,6 +327,51 @@ Vínculo **muchos a muchos**: un tutor tiene varios hijos y un alumno tiene vari
 
 **Borrado:** si se borra un tutor o un alumno, se borran sus vínculos (`Cascade`), pero no el otro lado.
 
+### Usuarios y roles — ASP.NET Core Identity
+
+**Conceptos:**
+- **Autenticación** = ¿quién eres? (correo + contraseña).
+- **Autorización** = ¿qué puedes hacer? (según tu rol).
+- **Identity** es el sistema de usuarios de .NET: guarda las contraseñas **cifradas** (hash PBKDF2, ni viendo la BD se pueden leer), bloquea cuentas tras intentos fallidos y maneja roles.
+- La API reconocerá al usuario con una **cookie** cifrada (`HttpOnly`: JavaScript no la puede leer). Es lo más seguro cuando la página y la API están en el mismo sitio.
+- **Los nodos ESP32 no inician sesión**: tendrán una clave propia (paso 6).
+
+**`Models\Usuario.cs`** → tabla `AspNetUsers`. Hereda de `IdentityUser` (que ya trae `Email`, `UserName`, `PasswordHash`, bloqueo, etc.) y agrega:
+
+| Propiedad | Tipo | Descripción |
+|---|---|---|
+| `NombreMostrar` | string (150) | Nombre que se ve en la app |
+| `Activo` | bool | Desactivar la cuenta |
+| `FechaAlta` | DateTime | |
+| `TutorId` | int? | Si la cuenta es de un padre: a qué `Tutor` corresponde → por ahí se sabe qué hijos ve. Único (un tutor, una cuenta) |
+
+**`Models\Roles.cs`**: constantes `Administrador`, `Maestro`, `Padre`.
+
+**`AppDbContext`** ahora hereda de `IdentityDbContext<Usuario>`, que agrega las tablas de Identity:
+
+| Tabla | Qué guarda |
+|---|---|
+| `AspNetUsers` | Las cuentas (con la contraseña cifrada) |
+| `AspNetRoles` | Los 3 roles |
+| `AspNetUserRoles` | Qué rol tiene cada usuario |
+| `AspNetUserClaims`, `AspNetRoleClaims`, `AspNetUserLogins`, `AspNetUserTokens` | Datos internos de Identity (no se usan directamente) |
+
+**Reglas configuradas en `Program.cs`:**
+| Regla | Valor |
+|---|---|
+| Contraseña | Mínimo 8 caracteres, con mayúscula, minúscula y número |
+| Bloqueo | 5 intentos fallidos → 15 minutos bloqueada |
+| Correo | Único por cuenta |
+
+**Administrador inicial:** al arrancar, la API crea los 3 roles y, si no hay ningún administrador, crea uno con `AdminInicial:Email` y `AdminInicial:Password` de la configuración. **La contraseña nunca va en el código ni en GitHub:**
+- **En tu PC → "User Secrets":** Visual Studio → clic derecho al proyecto → **Manage User Secrets** → se abre `secrets.json`:
+  ```json
+  { "AdminInicial": { "Email": "tu-correo@uabc.edu.mx", "Password": "TuContraseña123" } }
+  ```
+  Ese archivo vive **fuera del proyecto** (`%APPDATA%\Microsoft\UserSecrets\<id>\secrets.json`), así que nunca se sube.
+- **En Azure:** se configura en la App Service → *Environment variables* (`AdminInicial__Email`, `AdminInicial__Password`).
+- Si falta la configuración, la API arranca igual y avisa en la consola.
+
 ### Seguridad: quién ve a qué niño
 - **El padre NO elige qué pulsera ver.** Si bastara con escribir "SB-0001", cualquiera podría ver dónde está cualquier niño.
 - **La escuela vincula** al tutor con sus hijos (`TutoresAlumnos`) y genera un **código de invitación de un solo uso**. El padre se registra con su correo + contraseña + ese código, y su cuenta queda ligada solo a sus hijos. Al registrarse acepta el aviso de privacidad (LFPDPPP).
@@ -508,11 +569,115 @@ Todos opcionales (`puedeRecoger` default `true`).
 
 **Flujo de alta de una familia:** `POST /api/alumnos` → `POST /api/pulseras` + `PUT /api/pulseras/{id}/alumno` → `POST /api/tutores` (mamá, papá) → `PUT /api/tutores/{id}/alumnos/{alumnoId}` por cada uno.
 
+### `/api/zonas` y `/api/nodos` — `Endpoints\ZonasNodosEndpoints.cs`
+Configuración física de la escuela. **Por ahora abiertos (sin login).**
+
+| Método | Ruta | Qué hace | Respuestas |
+|---|---|---|---|
+| `GET` | `/api/zonas` | Zonas activas con cuántos nodos activos tiene cada una | 200 |
+| `GET` | `/api/zonas/{id}` | Una zona | 200 / 404 |
+| `POST` | `/api/zonas` | Alta: `{ "nombre": "Patio", "tipo": "Patio" }` | 201 / 400 / 409 (nombre repetido) |
+| `PUT` | `/api/zonas/{id}` | Edita nombre o tipo | 204 / 400 / 404 / 409 |
+| `DELETE` | `/api/zonas/{id}` | Baja lógica, **solo si no tiene nodos activos** | 204 / 404 / 409 |
+| `GET` | `/api/nodos` | Nodos activos con su zona y `ultimoContacto` | 200 |
+| `GET` | `/api/nodos/{id}` | Un nodo | 200 / 404 |
+| `POST` | `/api/nodos` | Alta | 201 / 400 / 409 (código repetido) |
+| `PUT` | `/api/nodos/{id}` | Edita (mover de zona, umbral, descripción) | 204 / 400 / 404 / 409 |
+| `DELETE` | `/api/nodos/{id}` | Baja lógica: **la API rechaza sus lecturas** desde ese momento | 204 / 404 |
+
+**Tipos de zona** (enum, se escriben como texto): `Salon`, `Patio`, `Tienda`, `Entrada`, `Perimetro`, `Otra`.
+
+**JSON de nodo:**
+```json
+{ "codigo": "nodo-2", "zonaId": 2, "descripcion": "Junto a la cancha", "umbralRssi": -75, "esPortatil": false }
+```
+- `codigo`: **debe coincidir con el "Código del nodo" del firmware** (menuconfig). Letras, números, `-`, `_`. Se guarda en minúsculas. Único.
+- `zonaId`: zona activa existente. `umbralRssi`: -127 a 0 (default -75).
+
+**Enums como texto:** en `Program.cs`, `JsonStringEnumConverter` hace que los enums viajen como `"Patio"` y no como `1`. Un valor que no existe (ej. `"Cocina"`) → 400.
+
+**Nota:** `ultimoContacto` se actualiza solo cuando el nodo manda una lectura (es decir, cuando ve una pulsera). Un nodo sin pulseras cerca parece "callado" aunque funcione. Se resolverá con el **latido** periódico del nodo (prototipo alfa).
+
+### `/api/auth` — `Endpoints\AuthEndpoints.cs` (sesión)
+
+| Método | Ruta | Qué hace | Respuestas |
+|---|---|---|---|
+| `POST` | `/api/auth/login` | Inicia sesión: `{ "email": "...", "password": "...", "recordarme": true }`. Si es correcto, deja la cookie `SafeBand.Sesion` y devuelve quién eres | 200 / 400 / 401 |
+| `POST` | `/api/auth/logout` | Cierra sesión (borra la cookie) | 204 |
+| `GET` | `/api/auth/yo` | ¿Quién soy?: `{ id, email, nombre, roles: ["Administrador"], tutorId }`. **Requiere sesión** | 200 / 401 |
+
+**Seguridad del login:**
+- **Mismo mensaje** para correo inexistente y contraseña incorrecta ("Correo o contraseña incorrectos.") → no revela qué correos están registrados.
+- Cuenta desactivada (`Activo = false`) → tampoco entra (mismo mensaje).
+- **Bloqueo:** 5 intentos fallidos → 15 minutos bloqueada, con mensaje que lo indica.
+- `recordarme: true` → la sesión sobrevive al cerrar el navegador; si no, dura mientras el navegador esté abierto.
+
+**La cookie `SafeBand.Sesion`** (configurada en `Program.cs`):
+| Opción | Valor | Para qué |
+|---|---|---|
+| `HttpOnly` | sí | JavaScript no la puede leer → si alguien inyecta un script en la página, no puede robar la sesión |
+| `SameSite` | `Strict` | El navegador no la manda en peticiones que vienen de otros sitios → protege contra CSRF (que otra página haga acciones con tu sesión) |
+| `SecurePolicy` | `SameAsRequest` | En HTTPS (Azure) solo viaja cifrada; en tu red local (HTTP) también funciona |
+| Duración | 7 días, se renueva con el uso | |
+
+**Sin sesión → 401; sin permiso → 403.** Por defecto ASP.NET redirigiría a una página de login; como es una API, se cambió para que responda esos códigos (`OnRedirectToLogin` / `OnRedirectToAccessDenied`).
+
+**Orden en `Program.cs`:** `app.UseAuthentication()` (¿quién eres?) y luego `app.UseAuthorization()` (¿qué puedes hacer?), antes de los endpoints.
+
+### Permisos por endpoint (paso 2c)
+
+| Endpoints | Quién | Notas |
+|---|---|---|
+| `/api/alumnos`, `/api/pulseras`, `/api/tutores`, `/api/zonas`, `/api/nodos` | **Solo Administrador** | Sin sesión → 401; con sesión pero otro rol → 403 |
+| `/api/auth/login`, `/api/auth/logout` | Cualquiera | |
+| `/api/auth/yo` | Cualquier usuario con sesión | |
+| `POST /api/lecturas` | ⚠️ **Abierto (temporal)** | Lo usan los ESP32 (no inician sesión) → clave por nodo en el paso 6 |
+| `GET /api/lecturas` | ⚠️ **Abierto (temporal)** | Lo usa la página de lecturas, que aún no tiene login → se protege en el paso 5 (y el padre verá solo lecturas de sus hijos) |
+| `/`, `/swagger` | Cualquiera | Página y documentación |
+
+**Cómo se aplica:** en `Program.cs` se define la política `Politicas.SoloAdministrador` (= tener el rol `Administrador`), y cada grupo de endpoints la usa con `.RequireAuthorization(Politicas.SoloAdministrador)`. Los de lecturas tienen `.AllowAnonymous()` explícito y un comentario de que es temporal.
+
+**Maestro:** por ahora no accede a la administración. Cuando existan los grupos, verá solo a los alumnos de su grupo.
+
+**Probar en Swagger:** sin sesión, `GET /api/alumnos` → 401. `POST /api/auth/login` con tu correo y contraseña → `GET /api/alumnos` → 200. `GET /api/auth/yo` → debe mostrar tu rol. Swagger está en el mismo sitio que la API, así que el navegador guarda y manda la cookie solo.
+
+**Dar de alta el segundo nodo:** `POST /api/zonas` `{ "nombre": "Patio", "tipo": "Patio" }` → anotar su `id` → `POST /api/nodos` `{ "codigo": "nodo-2", "zonaId": <id> }` → grabar el ESP32 #3 con código `nodo-2` en menuconfig.
+
 ---
 
-## 6b. Frontend (página de lecturas)
+## 6b. Frontend
 
-**Abrir:** con la API corriendo, ir a `https://localhost:7001/` (o `http://localhost:5213/`).
+### Panel SafeBand (`index.html`) — con inicio de sesión
+
+**Abrir:** con la API corriendo, `http://localhost:5213/` (o `https://localhost:7001/`). Sin sesión aparece el inicio de sesión; con sesión, el panel.
+
+**Diseño:**
+| Elemento | Decisión | Por qué |
+|---|---|---|
+| Colores | Fondo `#F4F7FB`, superficies blancas, texto azul marino `#16283F`, azul principal `#1D5FC2`, azul claro `#E2ECFA`. Verde / ámbar / rojo **solo** para estados (puesta / quitada o batería / SOS) | Claro y sobrio, azul "institucional"; el color siempre significa algo |
+| Tipografía | **Atkinson Hyperlegible** (Google Fonts), una sola familia | Diseñada por el Braille Institute para leerse bien con baja visión: distingue I, l, 1. Si no hay internet, usa la fuente del sistema |
+| Motivo visual | **Ondas concéntricas** (logo y pantalla de login) | Es lo que hace la pulsera: anunciarse por Bluetooth en ondas. Es el único adorno |
+| En vivo | Lo más grande es **el nombre de la zona**; la señal con barritas como las del celular | La pregunta que responde el sistema es "¿dónde está?" |
+| Accesibilidad | Foco visible con teclado, respeta "reducir movimiento" del sistema, textos de las barras de señal para lectores de pantalla | |
+| Celular | El menú lateral pasa a barra superior con botón ☰; se cierra al tocar fuera o con Esc | |
+
+**Cómo funciona (`js\app.js`):**
+1. Al abrir, pide `GET /api/auth/yo`. Si responde 401 → pantalla de login. Si no hay conexión → aviso con botón "Reintentar".
+2. Con sesión → panel con las secciones que permite su rol (lista `SECCIONES`: ruta, título, ícono, roles, vista).
+3. La navegación usa `#/...` en la dirección (`#/vivo`, `#/alumnos`...). Cada vista recibe un contenedor y devuelve una función para "limpiarse" al salir (ej. detener la actualización automática).
+4. Si a mitad del uso la API responde 401 (sesión vencida), `api.js` avisa y la app regresa al login con un mensaje.
+
+**Secciones:**
+| Sección | Rol | Estado |
+|---|---|---|
+| En vivo | Todos | ✅ Lista |
+| Alumnos, Pulseras, Tutores, Zonas y nodos | Administrador | ⏳ Pendientes (muestran aviso; mientras tanto, Swagger) |
+
+**Seguridad en el frontend:** todos los datos se insertan con `textContent` (función `el()` de `ui.js`), nunca con `innerHTML`, para que un nombre como `<script>` no se ejecute.
+
+### Página simple de lecturas (`monitor.html`) — sin login
+
+**Abrir:** `http://localhost:5213/monitor.html`. Es la página original del checkpoint, movida aquí como **respaldo**: no pide sesión porque `GET /api/lecturas` sigue abierto temporalmente.
 
 ### Por qué está en `wwwroot\`
 ASP.NET Core sirve automáticamente los archivos de `wwwroot\` gracias a dos líneas en `Program.cs`:
@@ -522,14 +687,14 @@ app.UseStaticFiles();    // sirve los archivos de wwwroot
 ```
 Ventajas: la página y la API están en la misma dirección (no hace falta configurar CORS) y al desplegar en Azure se suben juntas.
 
-### Archivos
+### Archivos de `monitor.html` (página simple, sin login)
 | Archivo | Qué hace |
 |---|---|
-| `index.html` | Estructura: aviso de error (oculto), tarjeta "Última lectura", tabla "Historial" |
-| `app.js` | Hace `fetch("/api/lecturas?limit=50")` al cargar y **cada 5 segundos**. La primera lectura del arreglo es la más reciente |
-| `styles.css` | Colores y diseño. Se adapta a celular (la tabla tiene scroll horizontal) |
+| `monitor.html` | Estructura: aviso de error (oculto), tarjeta "Última lectura", tabla "Historial" |
+| `monitor.js` | Hace `fetch("/api/lecturas?limit=50")` al cargar y **cada 5 segundos**. La primera lectura del arreglo es la más reciente |
+| `monitor.css` | Colores y diseño. Se adapta a celular (la tabla tiene scroll horizontal) |
 
-### Qué muestra
+### Qué muestra (`monitor.html` y la vista "En vivo" del panel)
 - **Última lectura:** RSSI grande, nivel de señal (fuerte ≥ -60, media ≥ -75, débil < -75 dBm), fecha/hora local, pulsera (y alumno si tiene), nodo y zona, y etiquetas de estado.
 - **Historial:** tabla con las últimas 50 lecturas.
 - **Etiquetas de estado:** `Puesta` (verde) / `Quitada` (naranja), `SOS` (rojo), `Batería baja` (naranja).
@@ -544,7 +709,7 @@ Ventajas: la página y la API están en la misma dirección (no hace falta confi
 ### Detalles técnicos
 - La hora llega en UTC (`...Z`) y `toLocaleString("es-MX")` la convierte a la hora local del navegador.
 - Los datos se insertan con `textContent` (no `innerHTML`) para que ningún texto se interprete como código (seguridad).
-- `API_LECTURAS` y `INTERVALO_MS` están al inicio de `app.js` por si hay que cambiarlos.
+- `API_LECTURAS` y `INTERVALO_MS` están al inicio de `monitor.js` (y `INTERVALO_MS` en `js\vistas\vivo.js`) por si hay que cambiarlos.
 
 ---
 
@@ -676,6 +841,7 @@ EF la crea sola en la BD y anota ahí cada migración aplicada. Así `Update-Dat
 | `20260929153232_Fase1_Inicial` | Tablas `Zonas`, `Nodos`, `Pulseras`, `LecturasBle` con llaves foráneas (borrado restringido) e índices |
 | `20260930025056_AgregarAlumnos` | Tabla `Alumnos`; columna `AlumnoId` (nullable) en `Pulseras` con llave foránea `FK_Pulseras_Alumnos_AlumnoId` |
 | `20261002075518_AgregarTutores` | Tablas `Tutores` (correo único) y `TutoresAlumnos` (llave compuesta, borrado en cascada) |
+| `20261002081042_AgregarUsuarios` | Tablas de Identity (`AspNetUsers`, `AspNetRoles`, `AspNetUserRoles`...) con `NombreMostrar`, `Activo`, `FechaAlta` y `TutorId` en `AspNetUsers` |
 
 ---
 
@@ -775,11 +941,20 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
   - [x] 1b. Endpoints de alumnos
   - [x] 1b. Endpoints de pulseras (alta y asignar a alumno)
   - [x] 1b. Endpoints de tutores (alta y vincular hijos)
-  - [ ] 1b. Endpoints de nodos y zonas
-  - [ ] 2. Inicio de sesión con ASP.NET Core Identity + roles (Padre, Maestro, Administrador)
+  - [x] 1b. Endpoints de nodos y zonas
+  - [x] 2a. Identity instalado: `Usuario`, roles, reglas de contraseña/bloqueo, administrador inicial por User Secrets
+  - [x] 2a. Migración `AgregarUsuarios` + configurar User Secrets
+  - [x] 2b. Endpoints de iniciar sesión, cerrar sesión y "¿quién soy?"
+  - [x] 2c. Proteger endpoints por rol (administración = solo Administrador; lecturas abiertas temporalmente)
   - [ ] 3. Códigos de invitación y registro del padre (con aviso de privacidad)
   - [ ] 4. Filtrar endpoints por rol (el padre solo ve a sus hijos)
-  - [ ] 5. Frontend: login, vista de padre, vista de administrador
+  - [ ] 5. Frontend:
+    - [x] Login, estructura del panel (menú, usuario, cerrar sesión), vista "En vivo"
+    - [ ] Alumnos
+    - [ ] Pulseras
+    - [ ] Tutores
+    - [ ] Zonas y nodos
+    - [ ] Vista de padre (después del paso 3)
   - [ ] 6. Clave (API key) por nodo para que nadie mande lecturas falsas
 - [ ] Después: alumnos, tutores, grupos, alertas, tienda, recogida, PWA
 
@@ -814,3 +989,9 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-02 | Migración `AgregarTutores` aplicada. Endpoints de alumnos (`GET`, `POST`, `PUT`, `DELETE` = baja lógica). Probados: lista vacía 200, Id inexistente 404, falta nombre 400, fecha inválida 400. |
 | 2026-10-02 | Endpoints de pulseras: alta, edición, asignar/quitar alumno, baja lógica. Reglas: no reasignar la pulsera de otro niño, una pulsera activa por alumno, formato `SB-XXXX`, UID NFC hexadecimal. Probados: formato inválido 400, duplicado 409, UID no hex 400, alumno inexistente 400, Id inexistente 404. |
 | 2026-10-02 | Endpoints de tutores: alta, edición, baja lógica, vincular/desvincular hijos (parentesco, contacto principal único por alumno, puede recoger). Probados: correo inválido 400, teléfono inválido 400, tutor inexistente 404, vínculo inexistente 404. |
+| 2026-10-02 | Endpoints de zonas y nodos (alta, edición, baja lógica; no se da de baja una zona con nodos activos). Enums como texto en el JSON (`JsonStringEnumConverter`). Probados: tipo inválido 400, falta tipo 400, código duplicado 409, zona inexistente 400, código con caracteres inválidos 400, umbral fuera de rango 400, baja de zona con nodos 409. Hay 95 lecturas reales en la BD. |
+| 2026-10-02 | Paso 2a: instalado ASP.NET Core Identity 10.0.12. `Models\Usuario.cs` (con `TutorId`), `Models\Roles.cs`, `AppDbContext` hereda de `IdentityDbContext`. Reglas: contraseña 8+ con mayúscula/minúscula/número, bloqueo 5 intentos/15 min. Roles y admin inicial se crean al arrancar (credenciales por User Secrets). |
+| 2026-10-02 | Migración `AgregarUsuarios` aplicada al arrancar. Creados los roles Administrador, Maestro, Padre y la cuenta de administrador `onit.sibaja@uabc.edu.mx`. |
+| 2026-10-02 | Paso 2b: sesión con cookie (`SafeBand.Sesion`: HttpOnly, SameSite Strict, 7 días). Endpoints `/api/auth/login`, `/logout`, `/yo`. Sin sesión → 401, sin permiso → 403. Probados con un correo inexistente (para no sumar intentos a la cuenta real): `/yo` sin sesión 401, login incorrecto 401 con mensaje genérico, correo inválido 400, logout 204. |
+| 2026-10-02 | Paso 2c: política `SoloAdministrador` en alumnos, pulseras, tutores, zonas y nodos. Lecturas (POST y GET) abiertas temporalmente con `.AllowAnonymous()` para no romper el ESP32 ni la página del checkpoint. Probado sin sesión: administración 401, lecturas 200/400, página y Swagger 200. Falta probar 403 (cuando exista una cuenta de Padre). |
+| 2026-10-02 | Frontend profesional (paso 5, parte 1): panel con login, menú por rol y vista "En vivo". Colores claros con azul, tipografía Atkinson Hyperlegible, motivo de ondas BLE. Revisado en escritorio y celular. La página anterior pasó a `monitor.html` (sin login, respaldo del checkpoint). |

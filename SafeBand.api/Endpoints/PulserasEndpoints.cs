@@ -14,7 +14,8 @@ public static class PulserasEndpoints
 {
     public static void MapPulseras(this WebApplication app)
     {
-        var grupo = app.MapGroup("/api/pulseras").WithTags("Pulseras");
+        var grupo = app.MapGroup("/api/pulseras").WithTags("Pulseras")
+            .RequireAuthorization(Politicas.SoloAdministrador);
 
         grupo.MapGet("/", Listar).WithSummary("Lista de pulseras (?sinAsignar=true solo las libres; ?incluirInactivas=true)");
         grupo.MapGet("/{id:int}", Obtener).WithSummary("Una pulsera por su Id");
