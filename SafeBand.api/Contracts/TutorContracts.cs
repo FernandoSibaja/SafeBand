@@ -67,4 +67,16 @@ public record TutorResponse(
     string? Telefono,
     bool Activo,
     DateTime FechaAlta,
-    List<HijoResponse> Hijos);
+    List<HijoResponse> Hijos,
+    string EstadoCuenta);   // SinInvitar | InvitacionPendiente | CuentaActiva
+
+/// <summary>Estado de la cuenta de un tutor en la app.</summary>
+public static class EstadosCuenta
+{
+    public const string SinInvitar = "SinInvitar";
+    public const string InvitacionPendiente = "InvitacionPendiente";
+    public const string CuentaActiva = "CuentaActiva";
+}
+
+/// <summary>El código recién generado. Es la ÚNICA vez que la API lo devuelve en claro.</summary>
+public record InvitacionResponse(string Codigo, DateTime Expira, string Email, string Tutor);

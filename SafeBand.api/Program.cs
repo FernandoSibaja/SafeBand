@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Diagnostics;
+using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using SafeBand.api.Data;
@@ -40,7 +41,8 @@ builder.Services.AddIdentityCore<Usuario>(o =>
     })
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<AppDbContext>()
-    .AddSignInManager();   // iniciar/cerrar sesión
+    .AddSignInManager()                       // iniciar/cerrar sesión
+    .AddErrorDescriber<ErroresIdentityEs>();  // mensajes de contraseña en español
 
 // Sesión con cookie: al iniciar sesión el navegador guarda "SafeBand.Sesion" y la manda en cada petición
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
@@ -59,7 +61,24 @@ builder.Services.ConfigureApplicationCookie(o =>
 });
 // Reglas de permisos (qué rol puede usar qué endpoints)
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy(Politicas.SoloAdministrador, p => p.RequireRole(Roles.Administrador));
+    .AddPolicy(Politicas.SoloAdministrador, p => p.RequireRole(Roles.Administrador))
+    .AddPolicy(Politicas.Personal, p => p.RequireRole(Roles.Administrador, Roles.Maestro))
+    .AddPolicy(Politicas.SoloPadre, p => p.RequireRole(Roles.Padre));
+
+// Límite de intentos en login y registro: 10 por minuto por dirección IP.
+// Frena a quien intente adivinar contraseñas o códigos de invitación probando muchos.
+builder.Services.AddRateLimiter(o =>
+{
+    o.AddPolicy("auth", ctx => RateLimitPartition.GetFixedWindowLimiter(
+        ctx.Connection.RemoteIpAddress?.ToString() ?? "desconocida",
+        _ => new FixedWindowRateLimiterOptions { PermitLimit = 10, Window = TimeSpan.FromMinutes(1) }));
+    o.OnRejected = async (contexto, cancelacion) =>
+    {
+        contexto.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+        await contexto.HttpContext.Response.WriteAsJsonAsync(
+            new { error = "Demasiados intentos. Espera un minuto e intenta de nuevo." }, cancelacion);
+    };
+});
 
 // Validación automática de los [Required], [Range]... de los contratos (Contracts/)
 builder.Services.AddProblemDetails();
@@ -118,6 +137,7 @@ app.UseStaticFiles();
 // Sesión: primero "¿quién eres?" (cookie) y luego "¿qué puedes hacer?" (roles)
 app.UseAuthentication();
 app.UseAuthorization();
+app.UseRateLimiter();
 
 // ---------- 3. Endpoints ----------
 
@@ -127,5 +147,6 @@ app.MapAlumnos();    // /api/alumnos   (Endpoints/AlumnosEndpoints.cs)
 app.MapPulseras();   // /api/pulseras  (Endpoints/PulserasEndpoints.cs)
 app.MapTutores();    // /api/tutores   (Endpoints/TutoresEndpoints.cs)
 app.MapZonasNodos(); // /api/zonas y /api/nodos (Endpoints/ZonasNodosEndpoints.cs)
+app.MapMisHijos();   // /api/mis-hijos (Endpoints/MisHijosEndpoints.cs) — vista del padre
 
 app.Run();

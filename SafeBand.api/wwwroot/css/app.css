@@ -207,6 +207,26 @@ button, input, select, textarea { font: inherit; color: inherit; }
 .login-form h1 { font-size: var(--t-xl); }
 .login-form .ayuda { color: var(--tinta-suave); font-size: var(--t-sm); margin-top: 6px; }
 .login-form .boton { width: 100%; }
+.login-form { padding: 8px 0; }
+.login-cambio { font-size: var(--t-sm); color: var(--tinta-suave); text-align: center; }
+.boton-texto {
+    padding: 0;
+    background: none;
+    border: 0;
+    color: var(--azul);
+    font-weight: 700;
+    text-decoration: underline;
+    cursor: pointer;
+}
+.aviso-privacidad {
+    padding: 10px 14px;
+    background: var(--azul-tenue);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-control);
+    font-size: var(--t-sm);
+}
+.aviso-privacidad summary { cursor: pointer; font-weight: 700; color: var(--azul); }
+.aviso-privacidad p { margin-top: 8px; color: var(--tinta-suave); }
 
 @media (max-width: 820px) {
     .login { grid-template-columns: 1fr; }
@@ -693,6 +713,98 @@ dialog.confirmar .botones { display: flex; justify-content: flex-end; gap: 10px;
     color: #fff;
     font-weight: 700;
     box-shadow: 0 8px 24px rgba(22, 40, 63, .25);
+}
+
+/* ---------- Vista del padre: "Mis hijos" ---------- */
+
+.hijos-padre { display: grid; gap: 20px; max-width: 640px; }
+.hijo-tarjeta {
+    display: grid;
+    gap: 16px;
+    padding: 20px 22px;
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-left: 6px solid var(--azul);
+    border-radius: var(--r-panel);
+}
+.hijo-tarjeta.sos { border-left-color: var(--peligro); }
+.hijo-tarjeta-encabezado { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.hijo-tarjeta-encabezado h2 { font-size: var(--t-lg); }
+.alerta-sos {
+    padding: 12px 14px;
+    border-radius: var(--r-control);
+    background: var(--peligro);
+    color: #fff;
+}
+.hijo-ahora-etiqueta { color: var(--tinta-suave); font-size: var(--t-sm); }
+.hijo-ahora-zona { font-size: var(--t-xxl); font-weight: 700; line-height: 1.1; letter-spacing: -0.01em; }
+.recorrido { padding-top: 14px; border-top: 1px solid var(--linea); }
+.recorrido h3 { font-size: var(--t-base); margin-bottom: 8px; }
+/* Una sola cuadrícula para toda la lista: las horas en una columna del ancho justo y las zonas alineadas */
+.recorrido ol {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: max-content 1fr;
+    gap: 6px 14px;
+    font-size: var(--t-sm);
+}
+.recorrido li { display: contents; }
+.recorrido-hora { color: var(--tinta-suave); font-variant-numeric: tabular-nums; white-space: nowrap; }
+@media (max-width: 480px) {
+    .hijo-tarjeta { padding: 16px; }
+    .hijo-ahora-zona { font-size: var(--t-xl); }
+}
+
+/* ---------- Hoja de invitación (pantalla + impresión) ---------- */
+
+.zona-impresion {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    overflow-y: auto;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 32px 16px;
+    background: rgba(22, 40, 63, .45);
+}
+.invitacion {
+    width: min(100%, 520px);
+    display: grid;
+    gap: 10px;
+    padding: 32px;
+    background: var(--superficie);
+    border-radius: var(--r-panel);
+    border-top: 6px solid var(--azul);
+}
+.invitacion-marca { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: var(--t-lg); margin-bottom: 8px; }
+.invitacion h2 { font-size: var(--t-xl); }
+.invitacion-etiqueta { margin-top: 12px; color: var(--tinta-suave); font-weight: 700; }
+.invitacion-codigo {
+    padding: 14px 16px;
+    text-align: center;
+    font-size: 2.6rem;
+    font-weight: 700;
+    letter-spacing: .12em;
+    font-variant-numeric: tabular-nums;
+    color: var(--azul);
+    background: var(--azul-tenue);
+    border: 2px dashed #9DB8E3;
+    border-radius: var(--r-control);
+}
+.invitacion-vence { color: var(--tinta-suave); font-size: var(--t-sm); text-align: center; }
+.invitacion-pasos { margin: 8px 0 0; padding-left: 22px; display: grid; gap: 6px; }
+.invitacion-nota { color: var(--tinta-suave); font-size: var(--t-sm); }
+.invitacion-botones { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+
+@media print {
+    /* Solo se imprime la hoja de invitación */
+    body.con-impresion > :not(.zona-impresion) { display: none !important; }
+    .zona-impresion { position: static; padding: 0; background: none; }
+    .invitacion { width: 100%; border: 1px solid #999; }
+    .no-imprimir { display: none !important; }
 }
 
 /* ---------- Sección en construcción ---------- */

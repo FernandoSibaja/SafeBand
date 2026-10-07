@@ -17,4 +17,6 @@ public static class Roles
 public static class Politicas
 {
     public const string SoloAdministrador = "SoloAdministrador";
+    public const string Personal = "Personal";       // Administrador o Maestro (personal de la escuela)
+    public const string SoloPadre = "SoloPadre";
 }

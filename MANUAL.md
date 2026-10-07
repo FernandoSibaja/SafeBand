@@ -71,10 +71,8 @@ SafeBand.api\
     │   │       ├── alumnos.js     ← "Alumnos": lista, búsqueda, formulario con pulsera, baja/reactivar
     │   │       ├── tutores.js     ← "Tutores": lista, búsqueda, formulario con sus hijos, baja/reactivar
     │   │       ├── zonas.js       ← "Zonas y nodos": zonas agrupadas con sus nodos, formularios, baja/reactivar
-    │   │       └── pulseras.js    ← "Pulseras": inventario, filtro asignadas/libres, última señal, baja/reactivar
-    │   ├── monitor.html           ← página simple de lecturas SIN login (respaldo para el checkpoint)
-    │   ├── monitor.js
-    │   └── monitor.css
+    │   │       ├── pulseras.js    ← "Pulseras": inventario, filtro asignadas/libres, última señal, baja/reactivar
+    │   │       └── hijos.js       ← "Mis hijos" (padre): dónde está cada hijo y su recorrido de hoy
     ├── Contracts\
     │   ├── LecturaContracts.cs    ← forma del JSON que entra y sale de /api/lecturas
     │   ├── AlumnoContracts.cs     ← JSON de /api/alumnos
@@ -374,6 +372,59 @@ Vínculo **muchos a muchos**: un tutor tiene varios hijos y un alumno tiene vari
   Ese archivo vive **fuera del proyecto** (`%APPDATA%\Microsoft\UserSecrets\<id>\secrets.json`), así que nunca se sube.
 - **En Azure:** se configura en la App Service → *Environment variables* (`AdminInicial__Email`, `AdminInicial__Password`).
 - Si falta la configuración, la API arranca igual y avisa en la consola.
+
+### Registro de padres con código de invitación (paso 3)
+
+**Flujo:**
+1. La escuela da de alta al tutor y lo vincula con sus hijos (pantalla Tutores).
+2. Administrador → **Generar invitación** (`POST /api/tutores/{id}/invitacion`) → la API devuelve un código como `K7M4-9QPX` **una sola vez**. Se muestra en pantalla para imprimirlo y entregarlo con el aviso de privacidad.
+3. El padre abre la app → **Crear mi cuenta** (`POST /api/auth/registro`) con **su correo** (el que registró la escuela), el **código**, una **contraseña** y aceptando el **aviso de privacidad**.
+4. La API crea su cuenta con rol **Padre**, ligada a su `Tutor` (`Usuario.TutorId`), marca el código como usado y lo deja con sesión iniciada.
+
+**`Models\Invitacion.cs`** → tabla `Invitaciones`:
+| Propiedad | Descripción |
+|---|---|
+| `TutorId` | Para quién es (FK → `Tutores`, cascada) |
+| `CodigoHash` | **Hash** del código (PBKDF2 con sal, igual que las contraseñas). El código en claro no se guarda |
+| `Creada`, `Expira` | Vence a los **7 días** |
+| `UsadaEn` | Cuándo se usó (null = pendiente) |
+
+**`Data\CodigosInvitacion.cs`:** genera códigos de 8 caracteres `XXXX-XXXX` con `RandomNumberGenerator` (criptográficamente seguro), con un alfabeto **sin caracteres que se confunden en papel** (sin 0/O ni 1/I/L). Al verificar acepta minúsculas, espacios o sin guion.
+
+**Reglas de seguridad:**
+| Regla | Por qué |
+|---|---|
+| Un solo uso, vence en 7 días | Un papel perdido deja de servir |
+| Solo funciona con **el correo del tutor** | Quien encuentre el código sin tener ese correo no puede usarlo |
+| Mismo mensaje si falla el correo o el código | No revela qué correos están registrados |
+| Generar uno nuevo **anula** los anteriores sin usar | Siempre hay un solo código vigente |
+| Si el tutor ya tiene cuenta → 409 al generar | |
+| **Límite de 10 intentos por minuto por IP** en `/api/auth/login` y `/api/auth/registro` (`AddRateLimiter`, política `"auth"`) → 429 "Demasiados intentos" | Frena a quien intente adivinar contraseñas o códigos |
+| Aviso de privacidad obligatorio; se guarda la fecha en `Usuario.AvisoPrivacidadAceptado` | Evidencia del consentimiento (LFPDPPP) |
+
+**Estado de la cuenta del tutor** (`TutorResponse.estadoCuenta`): `SinInvitar`, `InvitacionPendiente` (código vigente sin usar) o `CuentaActiva`.
+
+**Mensajes de contraseña en español:** `Data\ErroresIdentityEs.cs` reemplaza los mensajes de Identity (vienen en inglés), ej. "La contraseña debe tener al menos una mayúscula."
+
+### Vista del padre: `GET /api/mis-hijos` (`Endpoints\MisHijosEndpoints.cs`)
+Solo rol **Padre**. Devuelve **únicamente** los hijos vinculados a su tutor (activos):
+```json
+[{ "alumnoId": 1, "nombre": "Fernanda Arellano", "parentesco": "Madre", "pulsera": "SB-0001",
+   "ultima": { "zona": "Salón 3°A", "rssi": -63, "puesta": true, "sos": false, "bateriaBaja": false, "timestamp": "..." },
+   "recorrido": [ { "zona": "Entrada", "desde": "...", "hasta": "..." }, { "zona": "Salón 3°A", "desde": "...", "hasta": "..." } ] }]
+```
+- `?desde=` (con zona horaria): la página manda la medianoche de hoy en su hora local. Sin `desde`: últimas 12 h.
+- **Recorrido:** junta lecturas seguidas de la misma zona en un tramo; si pasan más de 10 min sin verlo en esa zona, empieza un tramo nuevo.
+- Usa el `AlumnoId` guardado en cada lectura (historial fiel).
+
+### Políticas de permisos (actualizado)
+| Política | Roles | Se usa en |
+|---|---|---|
+| `SoloAdministrador` | Administrador | Alumnos, pulseras, tutores, zonas, nodos, generar invitación |
+| `Personal` | Administrador, Maestro | `GET /api/lecturas` (**ya no es público**) |
+| `SoloPadre` | Padre | `GET /api/mis-hijos` |
+
+`POST /api/lecturas` sigue abierto para los ESP32 hasta el paso 6 (clave por nodo).
 
 ### Seguridad: quién ve a qué niño
 - **El padre NO elige qué pulsera ver.** Si bastara con escribir "SB-0001", cualquiera podría ver dónde está cualquier niño.
@@ -681,8 +732,29 @@ Configuración física de la escuela. **Por ahora abiertos (sin login).**
 | Tutores | Administrador | ✅ Lista |
 | Zonas y nodos | Administrador | ✅ Lista |
 | Pulseras | Administrador | ✅ Lista |
+| Mis hijos | **Padre** | ✅ Lista (es la única sección que ve un padre) |
 
-Con esto todas las secciones de administración están construidas (se eliminó la vista temporal `pendiente.js`).
+Con esto todas las secciones de administración están construidas (se eliminó la vista temporal `pendiente.js`). "En vivo" ahora es solo para Administrador y Maestro (muestra a todos los niños).
+
+### Registro de padres en las pantallas
+
+**En "Tutores":**
+- Columna **Cuenta**: *Sin invitar* (gris), *Invitación pendiente* (ámbar) o *Cuenta activa* (verde).
+- En el formulario de un tutor, sección **"Cuenta en la app"** con el botón **Generar invitación** (o "Generar un código nuevo" si ya tenía uno; pide confirmación porque el anterior deja de servir).
+- Al generar, se abre la **hoja de invitación**: logo, nombre del tutor, el **código en grande**, fecha de vencimiento, los pasos (dirección de la app, "Crear mi cuenta", su correo) y un recordatorio de no compartirlo. Botón **Imprimir**: al imprimir solo sale la hoja (`@media print` oculta todo lo demás y los botones). **El código no se puede volver a ver al cerrarla** (la API no lo guarda en claro).
+- Si el tutor no tiene hijos vinculados, la hoja avisa (solo en pantalla) que al entrar no verá a nadie.
+
+**En la pantalla de entrada (`login.js`):** dos modos, **Inicia sesión** y **Crea tu cuenta** (enlace "¿La escuela te dio un código de invitación? Crear mi cuenta").
+- Crear cuenta pide: correo, código (se escribe en mayúsculas solo), contraseña nueva + repetirla, y **aceptar el aviso de privacidad** (se puede leer desplegándolo).
+- Revisa antes de enviar que las contraseñas coincidan y que se aceptó el aviso.
+- Al crearla, entra directo a "Mis hijos".
+- ⚠️ El **texto del aviso de privacidad es un borrador**: la escuela, como responsable de los datos (LFPDPPP), debe revisar el definitivo.
+
+**"Mis hijos" (`hijos.js`)**, pensada para el celular, se actualiza cada 10 s:
+- Una **tarjeta por hijo**: nombre, su pulsera, **la zona donde está** en grande ("Está en Salón 3°A", o "Último lugar donde se detectó" si fue hace más de 30 min), hace cuánto, y etiquetas *Pulsera puesta / quitada* y *Batería baja*.
+- Si presionó **SOS**: borde rojo y aviso rojo arriba de la tarjeta.
+- **Hoy**: el recorrido del día, ej. "8:02 – 8:40 Salón 3°A". "Hoy" se calcula con la medianoche de la hora del celular.
+- Sin hijos vinculados: mensaje para comunicarse con la escuela.
 
 ### Pantalla "Alumnos" (`js\vistas\alumnos.js`)
 | Función | Cómo | API |
@@ -781,9 +853,9 @@ Alumnos ve las cosas desde el niño ("¿qué pulsera tiene Ana?"); esta pantalla
 
 **Seguridad en el frontend:** todos los datos se insertan con `textContent` (función `el()` de `ui.js`), nunca con `innerHTML`, para que un nombre como `<script>` no se ejecute.
 
-### Página simple de lecturas (`monitor.html`) — sin login
+### Página simple de lecturas (`monitor.html`) — ELIMINADA (2026-10-07)
 
-**Abrir:** `http://localhost:5213/monitor.html`. Es la página original del checkpoint, movida aquí como **respaldo**: no pide sesión porque `GET /api/lecturas` sigue abierto temporalmente.
+Era la página original del checkpoint, sin login. Se borró al cerrar `GET /api/lecturas` (ya no es público: mostraba dónde estaban todos los niños sin iniciar sesión). La vista "En vivo" del panel la reemplaza. La descripción de abajo queda como referencia histórica.
 
 ### Por qué está en `wwwroot\`
 ASP.NET Core sirve automáticamente los archivos de `wwwroot\` gracias a dos líneas en `Program.cs`:
@@ -1056,15 +1128,18 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
   - [x] 2a. Migración `AgregarUsuarios` + configurar User Secrets
   - [x] 2b. Endpoints de iniciar sesión, cerrar sesión y "¿quién soy?"
   - [x] 2c. Proteger endpoints por rol (administración = solo Administrador; lecturas abiertas temporalmente)
-  - [ ] 3. Códigos de invitación y registro del padre (con aviso de privacidad)
-  - [ ] 4. Filtrar endpoints por rol (el padre solo ve a sus hijos)
+  - [x] 3. Códigos de invitación y registro del padre (API) — falta migración `AgregarInvitaciones`
+  - [x] 4. Filtrar endpoints por rol: `GET /api/lecturas` solo personal; `GET /api/mis-hijos` para el padre
   - [ ] 5. Frontend:
     - [x] Login, estructura del panel (menú, usuario, cerrar sesión), vista "En vivo"
     - [x] Alumnos (con asignación de pulsera en el mismo formulario y reactivar)
     - [x] Pulseras (inventario, filtro, última señal, baja/reactivar)
     - [x] Tutores (con sus hijos en el mismo formulario y reactivar)
     - [x] Zonas y nodos
-    - [ ] Vista de padre (después del paso 3)
+    - [x] Generar e imprimir invitación (en Tutores) + estado de la cuenta
+    - [x] "Crear mi cuenta" en la pantalla de inicio de sesión
+    - [x] Vista "Mis hijos" para el padre (celular)
+    - [ ] Probar el flujo completo: invitar → registrarse → ver "Mis hijos"
   - [ ] 6. Clave (API key) por nodo para que nadie mande lecturas falsas
 - [ ] Después: alumnos, tutores, grupos, alertas, tienda, recogida, PWA
 
@@ -1110,3 +1185,5 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-03 | Pantalla "Tutores": lista con hijos, panel lateral con datos + hijos (parentesco, contacto principal, puede recoger), baja y reactivar. API: tutor + hijos en una sola operación, `POST /api/tutores/{id}/reactivar`. Código compartido movido a `ui.js` (`campo`, `crearCajon`, `normalizar`); Alumnos lo usa sin cambios de comportamiento. Revisado con datos simulados. |
 | 2026-10-03 | Pantalla "Zonas y nodos": zonas agrupadas con sus nodos, formularios de zona y nodo, "Agregar nodo aquí", etiquetas Portátil / En línea, baja y reactivar. API: `POST /api/zonas/{id}/reactivar` y `POST /api/nodos/{id}/reactivar`. Revisado con datos simulados. |
 | 2026-10-03 | Pantalla "Pulseras": inventario con filtro Todas/Asignadas/Libres, etiqueta "Revisar" (asignada sin señal > 24 h), formulario con alumno y confirmación al quitarle la pulsera a un niño, baja y reactivar. API: `alumnoId` en `GuardarPulseraRequest`, baja libera la pulsera, `POST /api/pulseras/{id}/reactivar`. Todas las secciones de administración terminadas. |
+| 2026-10-07 | Registro de padres, parte A (API): `Invitacion` (código hasheado, 7 días, un uso), `POST /api/tutores/{id}/invitacion`, `POST /api/auth/registro` (correo del tutor + código + aviso de privacidad → cuenta Padre ligada al tutor), `GET /api/mis-hijos` con última detección y recorrido. `GET /api/lecturas` cerrado (solo Administrador/Maestro). Límite de intentos en login/registro. Mensajes de contraseña en español. Borrada `monitor.html`. |
+| 2026-10-07 | Registro de padres, parte B (pantallas): columna y sección "Cuenta" en Tutores con hoja de invitación imprimible; "Crear mi cuenta" en la entrada con aviso de privacidad (borrador); vista "Mis hijos" para el padre. "En vivo" solo para personal. Migración `AgregarInvitaciones` creada. |

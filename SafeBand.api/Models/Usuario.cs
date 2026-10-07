@@ -19,4 +19,10 @@ public class Usuario : IdentityUser
     /// </summary>
     public int? TutorId { get; set; }
     public Tutor? Tutor { get; set; }
+
+    /// <summary>
+    /// Cuándo aceptó el aviso de privacidad (LFPDPPP). Se pide al registrarse.
+    /// Queda como evidencia del consentimiento del padre para tratar los datos de su hijo.
+    /// </summary>
+    public DateTime? AvisoPrivacidadAceptado { get; set; }
 }

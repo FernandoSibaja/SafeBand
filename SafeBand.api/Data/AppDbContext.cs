@@ -17,6 +17,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<Alumno> Alumnos => Set<Alumno>();
     public DbSet<Tutor> Tutores => Set<Tutor>();
     public DbSet<TutorAlumno> TutoresAlumnos => Set<TutorAlumno>();
+    public DbSet<Invitacion> Invitaciones => Set<Invitacion>();
     public DbSet<Pulsera> Pulseras => Set<Pulsera>();
     public DbSet<LecturaBle> LecturasBle => Set<LecturaBle>();
 
@@ -70,6 +71,14 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             e.Property(t => t.Email).HasMaxLength(200);
             e.Property(t => t.Telefono).HasMaxLength(20);
             e.HasIndex(t => t.Email).IsUnique();   // un correo = un tutor
+        });
+
+        modelBuilder.Entity<Invitacion>(e =>
+        {
+            e.ToTable("Invitaciones");
+            e.Property(i => i.CodigoHash).HasMaxLength(200);
+            e.HasOne(i => i.Tutor).WithMany(t => t.Invitaciones).HasForeignKey(i => i.TutorId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<TutorAlumno>(e =>

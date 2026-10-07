@@ -20,4 +20,7 @@ public class Tutor
 
     // Relación: los alumnos de los que es tutor
     public List<TutorAlumno> Alumnos { get; set; } = [];
+
+    // Códigos de invitación generados para que cree su cuenta
+    public List<Invitacion> Invitaciones { get; set; } = [];
 }

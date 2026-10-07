@@ -14,12 +14,14 @@ import { vistaAlumnos } from "./vistas/alumnos.js";
 import { vistaTutores } from "./vistas/tutores.js";
 import { vistaZonas } from "./vistas/zonas.js";
 import { vistaPulseras } from "./vistas/pulseras.js";
+import { vistaHijos } from "./vistas/hijos.js";
 
 const raiz = document.getElementById("app");
 
 // Secciones del menú: qué roles pueden verlas y qué vista dibujan
 const SECCIONES = [
-    { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador", "Maestro", "Padre"], vista: vistaVivo },
+    { ruta: "hijos",    titulo: "Mis hijos",       icono: "alumnos",  roles: ["Padre"], vista: vistaHijos },
+    { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador", "Maestro"], vista: vistaVivo },
     { ruta: "alumnos",  titulo: "Alumnos",         icono: "alumnos",  roles: ["Administrador"], vista: vistaAlumnos },
     { ruta: "pulseras", titulo: "Pulseras",        icono: "pulseras", roles: ["Administrador"], vista: vistaPulseras },
     { ruta: "tutores",  titulo: "Tutores",         icono: "tutores",  roles: ["Administrador"], vista: vistaTutores },

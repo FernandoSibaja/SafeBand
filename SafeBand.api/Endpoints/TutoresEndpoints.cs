@@ -22,6 +22,8 @@ public static class TutoresEndpoints
         grupo.MapPut("/{id:int}", Editar).WithSummary("Edita los datos de un tutor (y sus hijos, si se envían)");
         grupo.MapDelete("/{id:int}", DarDeBaja).WithSummary("Da de baja un tutor (no se borra: queda inactivo)");
         grupo.MapPost("/{id:int}/reactivar", Reactivar).WithSummary("Vuelve a activar un tutor dado de baja");
+        grupo.MapPost("/{id:int}/invitacion", GenerarInvitacion)
+            .WithSummary("Genera un código de invitación (un solo uso, vence en 7 días) para que el tutor cree su cuenta");
 
         grupo.MapPut("/{id:int}/alumnos/{alumnoId:int}", Vincular)
             .WithSummary("Vincula al tutor con un alumno (o actualiza parentesco, contacto principal y si puede recoger)");
@@ -35,13 +37,13 @@ public static class TutoresEndpoints
         var q = db.Tutores.AsNoTracking();
         if (incluirInactivos != true) q = q.Where(t => t.Activo);
 
-        return Results.Ok(await Proyectar(q.OrderBy(t => t.ApellidoPaterno).ThenBy(t => t.Nombres)).ToListAsync());
+        return Results.Ok(await Proyectar(db, q.OrderBy(t => t.ApellidoPaterno).ThenBy(t => t.Nombres)).ToListAsync());
     }
 
     // GET /api/tutores/5
     private static async Task<IResult> Obtener(int id, AppDbContext db)
     {
-        var tutor = await Proyectar(db.Tutores.AsNoTracking().Where(t => t.Id == id)).FirstOrDefaultAsync();
+        var tutor = await Proyectar(db, db.Tutores.AsNoTracking().Where(t => t.Id == id)).FirstOrDefaultAsync();
         return tutor is null
             ? Results.NotFound(new { error = $"No existe el tutor {id}." })
             : Results.Ok(tutor);
@@ -63,7 +65,7 @@ public static class TutoresEndpoints
 
         await db.SaveChangesAsync();   // tutor + vínculos con sus hijos en una sola operación
 
-        var respuesta = await Proyectar(db.Tutores.Where(t => t.Id == tutor.Id)).FirstAsync();
+        var respuesta = await Proyectar(db, db.Tutores.Where(t => t.Id == tutor.Id)).FirstAsync();
         return Results.Created($"/api/tutores/{tutor.Id}", respuesta);
     }
 
@@ -194,7 +196,7 @@ public static class TutoresEndpoints
         }
 
         await db.SaveChangesAsync();
-        return Results.Ok(await Proyectar(db.Tutores.Where(t => t.Id == id)).FirstAsync());
+        return Results.Ok(await Proyectar(db, db.Tutores.Where(t => t.Id == id)).FirstAsync());
     }
 
     // DELETE /api/tutores/5/alumnos/3
@@ -220,8 +222,10 @@ public static class TutoresEndpoints
         tutor.Telefono = string.IsNullOrWhiteSpace(req.Telefono) ? null : req.Telefono.Trim();
     }
 
-    private static IQueryable<TutorResponse> Proyectar(IQueryable<Tutor> q) =>
-        q.Select(t => new TutorResponse(
+    private static IQueryable<TutorResponse> Proyectar(AppDbContext db, IQueryable<Tutor> q)
+    {
+        var ahora = DateTime.UtcNow;
+        return q.Select(t => new TutorResponse(
             t.Id, t.Nombres, t.ApellidoPaterno, t.ApellidoMaterno, t.Email, t.Telefono, t.Activo,
             DateTime.SpecifyKind(t.FechaAlta, DateTimeKind.Utc),
             t.Alumnos
@@ -230,5 +234,39 @@ public static class TutoresEndpoints
                     ta.AlumnoId,
                     ta.Alumno.Nombres + " " + ta.Alumno.ApellidoPaterno,
                     ta.Parentesco, ta.EsContactoPrincipal, ta.PuedeRecoger))
-                .ToList()));
+                .ToList(),
+            // Estado de su cuenta en la app
+            db.Users.Any(u => u.TutorId == t.Id) ? EstadosCuenta.CuentaActiva
+                : t.Invitaciones.Any(i => i.UsadaEn == null && i.Expira > ahora) ? EstadosCuenta.InvitacionPendiente
+                : EstadosCuenta.SinInvitar));
+    }
+
+    // POST /api/tutores/5/invitacion → genera un código nuevo (anula los anteriores sin usar)
+    private static async Task<IResult> GenerarInvitacion(int id, AppDbContext db)
+    {
+        var tutor = await db.Tutores.FindAsync(id);
+        if (tutor is null) return Results.NotFound(new { error = $"No existe el tutor {id}." });
+        if (!tutor.Activo) return Results.BadRequest(new { error = "El tutor está dado de baja; reactívalo para invitarlo." });
+        if (await db.Users.AnyAsync(u => u.TutorId == id))
+            return Results.Conflict(new { error = $"{tutor.Nombres} {tutor.ApellidoPaterno} ya tiene cuenta. Puede iniciar sesión con {tutor.Email}." });
+
+        // Solo puede haber un código vigente: los anteriores sin usar se eliminan
+        var anteriores = await db.Invitaciones.Where(i => i.TutorId == id && i.UsadaEn == null).ToListAsync();
+        db.Invitaciones.RemoveRange(anteriores);
+
+        var codigo = CodigosInvitacion.Generar();
+        var invitacion = new Invitacion
+        {
+            TutorId = id,
+            Creada = DateTime.UtcNow,
+            Expira = DateTime.UtcNow.Add(CodigosInvitacion.Vigencia),
+        };
+        invitacion.CodigoHash = CodigosInvitacion.Hashear(invitacion, codigo);
+        db.Invitaciones.Add(invitacion);
+        await db.SaveChangesAsync();
+
+        // El código en claro solo se devuelve AHORA; después no se puede volver a consultar
+        return Results.Ok(new InvitacionResponse(
+            codigo, invitacion.Expira, tutor.Email, $"{tutor.Nombres} {tutor.ApellidoPaterno}"));
+    }
 }
