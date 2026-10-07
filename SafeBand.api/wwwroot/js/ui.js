@@ -113,6 +113,71 @@ export function confirmar({ titulo, mensaje, aceptar = "Aceptar", peligro = fals
     });
 }
 
+// ---------- Formularios ----------
+
+/** Campo de formulario: etiqueta + control + ayuda + espacio para su error. */
+export function campo(id, etiqueta, input, { opcional = false, ayuda = null, ancho = false } = {}) {
+    const error = el("p", { class: "error-campo", id: `${id}-error`, hidden: true });
+    const nodo = el("div", { class: ancho ? "campo ancho" : "campo" },
+        el("label", { for: id }, etiqueta, opcional && el("span", { class: "opcional" }, " (opcional)")),
+        input,
+        ayuda && el("p", { class: "ayuda-campo" }, ayuda),
+        error);
+    return {
+        nodo,
+        input,
+        ponerError(texto) {
+            error.textContent = texto;
+            error.hidden = false;
+            nodo.classList.add("con-error");
+            input.setAttribute("aria-invalid", "true");
+            input.setAttribute("aria-describedby", error.id);
+        },
+        limpiar() {
+            error.hidden = true;
+            nodo.classList.remove("con-error");
+            input.removeAttribute("aria-invalid");
+            input.removeAttribute("aria-describedby");
+        },
+    };
+}
+
+/**
+ * Panel lateral con un formulario. Se cierra con Esc, la X, tocando fuera o llamando cerrar().
+ * Al cerrarse devuelve el foco a donde estaba.
+ */
+export function crearCajon({ titulo, subtitulo, contenido, pie, alEnviar, alCerrar }) {
+    const focoAnterior = document.activeElement;
+    const formulario = el("form", {
+        class: "cajon", role: "dialog", "aria-modal": "true", "aria-labelledby": "cajon-titulo",
+        novalidate: true, onsubmit: alEnviar,
+    },
+        el("div", { class: "cajon-encabezado" },
+            el("div", {}, el("h2", { id: "cajon-titulo" }, titulo), subtitulo && el("p", { class: "sub" }, subtitulo)),
+            el("button", { type: "button", class: "boton boton-enlace", "aria-label": "Cerrar", onclick: () => cerrar() }, icono("cerrar"))),
+        el("div", { class: "cajon-cuerpo" }, contenido),
+        el("div", { class: "cajon-pie" }, pie));
+    const fondo = el("div", { class: "cajon-fondo", onclick: () => cerrar() });
+    const alTeclear = (e) => { if (e.key === "Escape" && !document.querySelector("dialog[open]")) cerrar(); };
+
+    document.addEventListener("keydown", alTeclear);
+    document.body.append(fondo, formulario);
+
+    function cerrar() {
+        document.removeEventListener("keydown", alTeclear);
+        fondo.remove();
+        formulario.remove();
+        alCerrar?.();
+        focoAnterior?.focus?.();
+    }
+    return { formulario, cerrar };
+}
+
+/** Para buscar sin importar mayúsculas ni acentos ("lopez" encuentra "López"). */
+export function normalizar(texto) {
+    return (texto ?? "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
+}
+
 /** Edad en años a partir de "AAAA-MM-DD". */
 export function edad(fecha) {
     if (!fecha) return null;

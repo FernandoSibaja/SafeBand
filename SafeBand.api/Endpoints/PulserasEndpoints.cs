@@ -19,10 +19,11 @@ public static class PulserasEndpoints
 
         grupo.MapGet("/", Listar).WithSummary("Lista de pulseras (?sinAsignar=true solo las libres; ?incluirInactivas=true)");
         grupo.MapGet("/{id:int}", Obtener).WithSummary("Una pulsera por su Id");
-        grupo.MapPost("/", Crear).WithSummary("Da de alta una pulsera (sin asignar)");
-        grupo.MapPut("/{id:int}", Editar).WithSummary("Edita el identificador BLE o el UID NFC");
+        grupo.MapPost("/", Crear).WithSummary("Da de alta una pulsera (opcionalmente ya asignada a un alumno)");
+        grupo.MapPut("/{id:int}", Editar).WithSummary("Edita identificador BLE, UID NFC y alumno (alumnoId null = libre)");
         grupo.MapPut("/{id:int}/alumno", Asignar).WithSummary("Asigna la pulsera a un alumno (alumnoId = null para quitarla)");
-        grupo.MapDelete("/{id:int}", DarDeBaja).WithSummary("Da de baja la pulsera (perdida o dañada); no se borra");
+        grupo.MapDelete("/{id:int}", DarDeBaja).WithSummary("Da de baja la pulsera (perdida o dañada): queda libre; no se borra");
+        grupo.MapPost("/{id:int}/reactivar", Reactivar).WithSummary("Vuelve a activar una pulsera dada de baja (queda libre)");
     }
 
     // GET /api/pulseras
@@ -54,9 +55,12 @@ public static class PulserasEndpoints
         var conflicto = await BuscarDuplicado(db, idBle, uid, idActual: null);
         if (conflicto is not null) return Results.Conflict(new { error = conflicto });
 
-        var pulsera = new Pulsera { IdentificadorBle = idBle, UidNfc = uid, FechaAlta = DateTime.UtcNow };
+        var errorAlumno = await ValidarAlumno(db, req.AlumnoId, pulseraId: null);
+        if (errorAlumno is not null) return errorAlumno;
+
+        var pulsera = new Pulsera { IdentificadorBle = idBle, UidNfc = uid, AlumnoId = req.AlumnoId, FechaAlta = DateTime.UtcNow };
         db.Pulseras.Add(pulsera);
-        await db.SaveChangesAsync();
+        await db.SaveChangesAsync();   // pulsera + su alumno en una sola operación
 
         var respuesta = await Proyectar(db.Pulseras.Where(p => p.Id == pulsera.Id)).FirstAsync();
         return Results.Created($"/api/pulseras/{pulsera.Id}", respuesta);
@@ -75,10 +79,50 @@ public static class PulserasEndpoints
         var conflicto = await BuscarDuplicado(db, idBle, uid, idActual: id);
         if (conflicto is not null) return Results.Conflict(new { error = conflicto });
 
+        if (!pulsera.Activa && req.AlumnoId is not null)
+            return Results.BadRequest(new { error = $"La pulsera {pulsera.IdentificadorBle} está dada de baja; reactívala para asignarla." });
+
+        var errorAlumno = await ValidarAlumno(db, req.AlumnoId, pulseraId: id);
+        if (errorAlumno is not null) return errorAlumno;
+
         pulsera.IdentificadorBle = idBle;
         pulsera.UidNfc = uid;
+        // Cambiar de alumno desde aquí es una decisión explícita del formulario (la pantalla lo confirma antes)
+        pulsera.AlumnoId = req.AlumnoId;
         await db.SaveChangesAsync();
         return Results.NoContent();
+    }
+
+    // POST /api/pulseras/5/reactivar  → vuelve a estar disponible (libre)
+    private static async Task<IResult> Reactivar(int id, AppDbContext db)
+    {
+        var pulsera = await db.Pulseras.FindAsync(id);
+        if (pulsera is null) return Results.NotFound(new { error = $"No existe la pulsera {id}." });
+
+        pulsera.Activa = true;
+        await db.SaveChangesAsync();
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Revisa que la pulsera se pueda asignar a ese alumno: que exista, esté activo
+    /// y no tenga ya otra pulsera activa (un alumno, una pulsera). null = sin alumno, siempre válido.
+    /// </summary>
+    private static async Task<IResult?> ValidarAlumno(AppDbContext db, int? alumnoId, int? pulseraId)
+    {
+        if (alumnoId is null) return null;
+
+        var alumno = await db.Alumnos.FindAsync(alumnoId.Value);
+        if (alumno is null || !alumno.Activo)
+            return Results.BadRequest(new { error = $"El alumno {alumnoId} no existe o está dado de baja." });
+
+        var otra = await db.Pulseras.FirstOrDefaultAsync(p => p.AlumnoId == alumno.Id && p.Activa && p.Id != pulseraId);
+        if (otra is not null)
+            return Results.Conflict(new
+            {
+                error = $"{alumno.Nombres} {alumno.ApellidoPaterno} ya tiene la pulsera {otra.IdentificadorBle}. Quítasela o dala de baja primero."
+            });
+        return null;
     }
 
     // PUT /api/pulseras/5/alumno   { "alumnoId": 3 }  o  { "alumnoId": null }
@@ -124,13 +168,15 @@ public static class PulserasEndpoints
         return Results.NoContent();
     }
 
-    // DELETE /api/pulseras/5  → baja lógica (pulsera perdida o dañada); conserva sus lecturas
+    // DELETE /api/pulseras/5  → baja lógica (pulsera perdida o dañada)
+    // Queda libre: el alumno puede recibir otra. Sus lecturas conservan a quién pertenecían (LecturaBle.AlumnoId).
     private static async Task<IResult> DarDeBaja(int id, AppDbContext db)
     {
         var pulsera = await db.Pulseras.FindAsync(id);
         if (pulsera is null) return Results.NotFound(new { error = $"No existe la pulsera {id}." });
 
         pulsera.Activa = false;
+        pulsera.AlumnoId = null;
         await db.SaveChangesAsync();
         return Results.NoContent();
     }

@@ -3,8 +3,10 @@ using System.ComponentModel.DataAnnotations;
 namespace SafeBand.api.Contracts;
 
 /// <summary>
-/// JSON para dar de alta o editar un tutor. Ejemplo:
-/// { "nombres": "María", "apellidoPaterno": "García", "email": "maria@correo.com", "telefono": "686 123 4567" }
+/// JSON para dar de alta o editar un tutor, con sus hijos en la misma operación. Ejemplo:
+/// { "nombres": "María", "apellidoPaterno": "García", "email": "maria@correo.com", "telefono": "686 123 4567",
+///   "hijos": [ { "alumnoId": 3, "parentesco": "Madre", "esContactoPrincipal": true, "puedeRecoger": true } ] }
+/// "hijos": null → no se tocan los vínculos;  [] → se quitan todos.
 /// </summary>
 public record GuardarTutorRequest(
     [property: Required(ErrorMessage = "El campo 'nombres' es obligatorio.")]
@@ -25,7 +27,17 @@ public record GuardarTutorRequest(
 
     [property: RegularExpression(@"^[0-9+\s\-()]{7,20}$",
         ErrorMessage = "El campo 'telefono' solo admite números, espacios, +, - y paréntesis (7 a 20 caracteres).")]
-    string? Telefono = null);
+    string? Telefono = null,
+
+    List<HijoRequest>? Hijos = null);
+
+/// <summary>Un hijo dentro de GuardarTutorRequest.</summary>
+public record HijoRequest(
+    int AlumnoId,
+    [property: StringLength(50, ErrorMessage = "El parentesco admite máximo 50 caracteres.")]
+    string? Parentesco = null,
+    bool EsContactoPrincipal = false,
+    bool PuedeRecoger = true);
 
 /// <summary>
 /// JSON para vincular un tutor con un alumno (o actualizar el vínculo). Ejemplo:

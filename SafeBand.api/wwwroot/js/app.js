@@ -11,7 +11,9 @@ import { el, icono, logo } from "./ui.js";
 import { vistaLogin } from "./vistas/login.js";
 import { vistaVivo } from "./vistas/vivo.js";
 import { vistaAlumnos } from "./vistas/alumnos.js";
-import { vistaPendiente } from "./vistas/pendiente.js";
+import { vistaTutores } from "./vistas/tutores.js";
+import { vistaZonas } from "./vistas/zonas.js";
+import { vistaPulseras } from "./vistas/pulseras.js";
 
 const raiz = document.getElementById("app");
 
@@ -19,9 +21,9 @@ const raiz = document.getElementById("app");
 const SECCIONES = [
     { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador", "Maestro", "Padre"], vista: vistaVivo },
     { ruta: "alumnos",  titulo: "Alumnos",         icono: "alumnos",  roles: ["Administrador"], vista: vistaAlumnos },
-    { ruta: "pulseras", titulo: "Pulseras",        icono: "pulseras", roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Pulseras", "Alta de pulseras y asignación a cada alumno.") },
-    { ruta: "tutores",  titulo: "Tutores",         icono: "tutores",  roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Tutores", "Padres y tutores, y qué alumnos puede ver cada uno.") },
-    { ruta: "zonas",    titulo: "Zonas y nodos",   icono: "zonas",    roles: ["Administrador"], vista: (c) => vistaPendiente(c, "Zonas y nodos", "Áreas de la escuela y los receptores de cada una.") },
+    { ruta: "pulseras", titulo: "Pulseras",        icono: "pulseras", roles: ["Administrador"], vista: vistaPulseras },
+    { ruta: "tutores",  titulo: "Tutores",         icono: "tutores",  roles: ["Administrador"], vista: vistaTutores },
+    { ruta: "zonas",    titulo: "Zonas y nodos",   icono: "zonas",    roles: ["Administrador"], vista: vistaZonas },
 ];
 
 let usuario = null;          // quién inició sesión (o null)

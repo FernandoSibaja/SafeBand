@@ -18,9 +18,10 @@ public static class TutoresEndpoints
 
         grupo.MapGet("/", Listar).WithSummary("Lista de tutores con sus hijos (?incluirInactivos=true)");
         grupo.MapGet("/{id:int}", Obtener).WithSummary("Un tutor con sus hijos");
-        grupo.MapPost("/", Crear).WithSummary("Da de alta un tutor");
-        grupo.MapPut("/{id:int}", Editar).WithSummary("Edita los datos de un tutor");
+        grupo.MapPost("/", Crear).WithSummary("Da de alta un tutor (y sus hijos, si se envían)");
+        grupo.MapPut("/{id:int}", Editar).WithSummary("Edita los datos de un tutor (y sus hijos, si se envían)");
         grupo.MapDelete("/{id:int}", DarDeBaja).WithSummary("Da de baja un tutor (no se borra: queda inactivo)");
+        grupo.MapPost("/{id:int}/reactivar", Reactivar).WithSummary("Vuelve a activar un tutor dado de baja");
 
         grupo.MapPut("/{id:int}/alumnos/{alumnoId:int}", Vincular)
             .WithSummary("Vincula al tutor con un alumno (o actualiza parentesco, contacto principal y si puede recoger)");
@@ -56,7 +57,11 @@ public static class TutoresEndpoints
         var tutor = new Tutor { FechaAlta = DateTime.UtcNow };
         Aplicar(tutor, req, email);
         db.Tutores.Add(tutor);
-        await db.SaveChangesAsync();
+
+        var error = await AplicarHijos(db, tutor, req.Hijos);
+        if (error is not null) return error;
+
+        await db.SaveChangesAsync();   // tutor + vínculos con sus hijos en una sola operación
 
         var respuesta = await Proyectar(db.Tutores.Where(t => t.Id == tutor.Id)).FirstAsync();
         return Results.Created($"/api/tutores/{tutor.Id}", respuesta);
@@ -73,8 +78,77 @@ public static class TutoresEndpoints
             return Results.Conflict(new { error = $"Ya existe otro tutor con el correo {email}." });
 
         Aplicar(tutor, req, email);
+
+        var error = await AplicarHijos(db, tutor, req.Hijos);
+        if (error is not null) return error;
+
         await db.SaveChangesAsync();
         return Results.NoContent();
+    }
+
+    // POST /api/tutores/5/reactivar
+    private static async Task<IResult> Reactivar(int id, AppDbContext db)
+    {
+        var tutor = await db.Tutores.FindAsync(id);
+        if (tutor is null) return Results.NotFound(new { error = $"No existe el tutor {id}." });
+
+        tutor.Activo = true;
+        await db.SaveChangesAsync();
+        return Results.NoContent();
+    }
+
+    /// <summary>
+    /// Deja los hijos del tutor exactamente como en la lista recibida (agrega, actualiza y quita vínculos).
+    /// Los vínculos con alumnos dados de baja no se tocan: no se ven en la pantalla y se conservan
+    /// por si el alumno se reactiva. Devuelve un error, o null si todo está bien.
+    /// </summary>
+    private static async Task<IResult?> AplicarHijos(AppDbContext db, Tutor tutor, List<HijoRequest>? hijos)
+    {
+        if (hijos is null) return null;   // no se enviaron: no se cambian los vínculos
+
+        var ids = hijos.Select(h => h.AlumnoId).ToList();
+        if (ids.Count != ids.Distinct().Count())
+            return Results.BadRequest(new { error = "Un alumno aparece dos veces en la lista de hijos." });
+
+        var alumnos = await db.Alumnos.Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id);
+        foreach (var id in ids)
+        {
+            if (!alumnos.TryGetValue(id, out var a))
+                return Results.BadRequest(new { error = $"El alumno {id} no existe." });
+            if (!a.Activo)
+                return Results.BadRequest(new { error = $"{a.Nombres} {a.ApellidoPaterno} está dado de baja; reactívalo para vincularlo." });
+        }
+
+        var actuales = tutor.Id == 0
+            ? []
+            : await db.TutoresAlumnos.Include(ta => ta.Alumno).Where(ta => ta.TutorId == tutor.Id).ToListAsync();
+
+        // Quitar los hijos (activos) que ya no vienen en la lista
+        foreach (var ta in actuales.Where(ta => ta.Alumno.Activo && !ids.Contains(ta.AlumnoId)))
+            db.TutoresAlumnos.Remove(ta);
+
+        foreach (var h in hijos)
+        {
+            var vinculo = actuales.FirstOrDefault(ta => ta.AlumnoId == h.AlumnoId);
+            if (vinculo is null)
+            {
+                vinculo = new TutorAlumno { Tutor = tutor, AlumnoId = h.AlumnoId };
+                db.TutoresAlumnos.Add(vinculo);
+            }
+            vinculo.Parentesco = string.IsNullOrWhiteSpace(h.Parentesco) ? null : h.Parentesco.Trim();
+            vinculo.EsContactoPrincipal = h.EsContactoPrincipal;
+            vinculo.PuedeRecoger = h.PuedeRecoger;
+
+            // Solo un contacto principal por alumno: los otros tutores de ese niño dejan de serlo
+            if (h.EsContactoPrincipal)
+            {
+                var otros = await db.TutoresAlumnos
+                    .Where(ta => ta.AlumnoId == h.AlumnoId && ta.TutorId != tutor.Id && ta.EsContactoPrincipal)
+                    .ToListAsync();
+                foreach (var o in otros) o.EsContactoPrincipal = false;
+            }
+        }
+        return null;
     }
 
     // DELETE /api/tutores/5  → baja lógica

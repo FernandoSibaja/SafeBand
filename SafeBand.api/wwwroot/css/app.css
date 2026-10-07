@@ -477,6 +477,34 @@ td.vacio { padding: 32px 16px; text-align: center; color: var(--tinta-suave); wh
 }
 .buscador:focus-visible { border-color: var(--azul); outline-offset: 0; }
 
+/* En las tablas de administración el texto puede partirse en dos líneas (evita la barra horizontal) */
+.tabla-tarjetas td { white-space: normal; }
+.tabla-tarjetas td.acciones,
+.tabla-tarjetas td.num,
+.tabla-tarjetas td.sin-corte { white-space: nowrap; }
+
+/* Filtro de opciones excluyentes (Todas / Asignadas / Libres) */
+.segmentos {
+    display: inline-flex;
+    padding: 3px;
+    gap: 2px;
+    margin: 0;
+    background: #E8EEF6;
+    border: 0;
+    border-radius: var(--r-control);
+}
+.segmentos label {
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: var(--t-sm);
+    font-weight: 700;
+    color: var(--tinta-suave);
+    cursor: pointer;
+}
+.segmentos input { position: absolute; opacity: 0; pointer-events: none; }
+.segmentos label:has(input:checked) { background: var(--superficie); color: var(--azul); box-shadow: 0 1px 2px rgba(22, 40, 63, .12); }
+.segmentos label:has(input:focus-visible) { outline: 3px solid color-mix(in srgb, var(--azul) 45%, transparent); }
+
 /* Fila dada de baja: atenuada */
 tr.inactivo td { color: var(--tinta-suave); }
 td.acciones { text-align: right; width: 1%; }
@@ -532,6 +560,7 @@ td.acciones { text-align: right; width: 1%; }
 .cajon-encabezado h2 { font-size: var(--t-lg); }
 .cajon-encabezado .sub { margin-top: 2px; color: var(--tinta-suave); font-size: var(--t-sm); }
 .cajon-cuerpo { flex: 1; overflow-y: auto; padding: 20px 24px; display: grid; align-content: start; gap: 18px; }
+.cajon-cuerpo > * { min-width: 0; }   /* que nada sea más ancho que el panel */
 .cajon-pie {
     display: flex;
     flex-wrap: wrap;
@@ -567,6 +596,72 @@ td.acciones { text-align: right; width: 1%; }
 }
 .separador-form h3 { font-size: var(--t-base); margin-bottom: 4px; }
 .separador-form p { color: var(--tinta-suave); font-size: var(--t-sm); }
+
+/* ---------- Zonas y sus nodos (agrupados) ---------- */
+
+.zonas { display: grid; gap: 16px; }
+.zona {
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-panel);
+    overflow: hidden;
+}
+.zona.inactiva { border-style: dashed; }
+.zona-encabezado {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--linea);
+}
+.zona-encabezado h2 { font-size: var(--t-lg); }
+.zona-encabezado .acciones-zona { margin-left: auto; display: flex; gap: 4px; }
+.zona.inactiva .zona-encabezado h2 { color: var(--tinta-suave); }
+.zona table thead th { background: transparent; }
+.zona-vacia {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+    padding: 16px;
+    color: var(--tinta-suave);
+    font-size: var(--t-sm);
+}
+
+/* ---------- Hijos del tutor (dentro del formulario) ---------- */
+
+.hijos { display: grid; gap: 10px; }
+.hijo {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--linea);
+    border-radius: var(--r-control);
+    background: var(--azul-tenue);
+}
+.hijo-nombre { font-weight: 700; align-self: center; }
+.hijo-opciones { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.hijo-opciones input[type="text"] {
+    width: 150px;
+    min-height: 36px;
+    padding: 0 10px;
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-control);
+}
+.hijos-vacio { color: var(--tinta-suave); font-size: var(--t-sm); padding: 4px 0; }
+.agregar-hijo { display: flex; gap: 10px; }
+.agregar-hijo select {
+    flex: 1;
+    min-width: 0;
+    min-height: 42px;
+    padding: 0 10px;
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-control);
+}
 
 /* ---------- Confirmación (diálogo) ---------- */
 

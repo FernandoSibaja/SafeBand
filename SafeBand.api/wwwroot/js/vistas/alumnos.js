@@ -8,7 +8,7 @@
 // ============================================================
 
 import { api } from "../api.js";
-import { el, icono, avisoBreve, confirmar, edad } from "../ui.js";
+import { el, icono, avisoBreve, confirmar, edad, campo, crearCajon, normalizar } from "../ui.js";
 
 const OPCION_NUEVA = "nueva";   // valor del selector para "Registrar una pulsera nueva"
 
@@ -104,7 +104,6 @@ export function vistaAlumnos(contenedor) {
     async function abrirFormulario(alumno) {
         cerrarFormulario?.();
         const editando = alumno != null;
-        const focoAnterior = document.activeElement;
 
         // Campos
         const nombres = campo("f-nombres", "Nombres", el("input", { id: "f-nombres", autocomplete: "off", value: alumno?.nombres ?? "" }), { ancho: true });
@@ -131,40 +130,28 @@ export function vistaAlumnos(contenedor) {
                 ? el("button", { type: "button", class: "boton boton-peligro", onclick: darDeBaja }, "Dar de baja")
                 : el("button", { type: "button", class: "boton boton-sutil", onclick: reactivar }, "Reactivar");
 
-        const titulo = editando ? `${alumno.nombres} ${alumno.apellidoPaterno}` : "Agregar alumno";
-        const formulario = el("form", { class: "cajon", role: "dialog", "aria-modal": "true", "aria-labelledby": "cajon-titulo", onsubmit: guardar, novalidate: true },
-            el("div", { class: "cajon-encabezado" },
-                el("div", {},
-                    el("h2", { id: "cajon-titulo" }, titulo),
-                    el("p", { class: "sub" }, editando ? "Edita sus datos o cambia su pulsera." : "Sus datos y, si ya la tiene, su pulsera.")),
-                el("button", { type: "button", class: "boton boton-enlace", "aria-label": "Cerrar", onclick: () => cerrar() }, icono("cerrar"))),
-            el("div", { class: "cajon-cuerpo" },
+        const { formulario, cerrar } = crearCajon({
+            titulo: editando ? `${alumno.nombres} ${alumno.apellidoPaterno}` : "Agregar alumno",
+            subtitulo: editando ? "Edita sus datos o cambia su pulsera." : "Sus datos y, si ya la tiene, su pulsera.",
+            contenido: [
                 avisoForm,
                 el("div", { class: "grupo-campos" }, nombres.nodo, paterno.nodo, materno.nodo, nacimiento.nodo, matricula.nodo),
                 el("div", { class: "separador-form" },
                     el("h3", {}, "Pulsera"),
                     el("p", {}, "Solo aparecen las pulseras que no tiene otro alumno.")),
-                el("div", { class: "grupo-campos" }, pulsera.nodo, nueva.nodo)),
-            el("div", { class: "cajon-pie" },
+                el("div", { class: "grupo-campos" }, pulsera.nodo, nueva.nodo),
+            ],
+            pie: [
                 accionEstado,
                 el("div", { class: "derecha" },
                     el("button", { type: "button", class: "boton boton-sutil", onclick: () => cerrar() }, "Cancelar"),
-                    botonGuardar)));
-
-        const fondo = el("div", { class: "cajon-fondo", onclick: () => cerrar() });
-        const alTeclear = (e) => { if (e.key === "Escape" && !document.querySelector("dialog[open]")) cerrar(); };
-        document.addEventListener("keydown", alTeclear);
-        document.body.append(fondo, formulario);
-        nombres.input.focus();
-
-        function cerrar() {
-            document.removeEventListener("keydown", alTeclear);
-            fondo.remove();
-            formulario.remove();
-            cerrarFormulario = null;
-            focoAnterior?.focus?.();
-        }
+                    botonGuardar),
+            ],
+            alEnviar: guardar,
+            alCerrar: () => { cerrarFormulario = null; },
+        });
         cerrarFormulario = cerrar;
+        nombres.input.focus();
 
         // Opciones del selector de pulsera
         let libres = [];
@@ -314,33 +301,6 @@ export function vistaAlumnos(contenedor) {
 
 // ---------- Ayudantes de esta pantalla ----------
 
-/** Campo de formulario: etiqueta + control + ayuda + espacio para su error. */
-function campo(id, etiqueta, input, { opcional = false, ayuda = null, ancho = false } = {}) {
-    const error = el("p", { class: "error-campo", id: `${id}-error`, hidden: true });
-    const nodo = el("div", { class: ancho ? "campo ancho" : "campo" },
-        el("label", { for: id }, etiqueta, opcional && el("span", { class: "opcional" }, " (opcional)")),
-        input,
-        ayuda && el("p", { class: "ayuda-campo" }, ayuda),
-        error);
-    return {
-        nodo,
-        input,
-        ponerError(texto) {
-            error.textContent = texto;
-            error.hidden = false;
-            nodo.classList.add("con-error");
-            input.setAttribute("aria-invalid", "true");
-            input.setAttribute("aria-describedby", error.id);
-        },
-        limpiar() {
-            error.hidden = true;
-            nodo.classList.remove("con-error");
-            input.removeAttribute("aria-invalid");
-            input.removeAttribute("aria-describedby");
-        },
-    };
-}
-
 function filaMensaje(texto) {
     return el("tr", {}, el("td", { class: "vacio", colspan: 5 }, texto));
 }
@@ -348,9 +308,4 @@ function filaMensaje(texto) {
 function nombreCompleto(a) {
     const apellidos = [a.apellidoPaterno, a.apellidoMaterno].filter(Boolean).join(" ");
     return `${apellidos}, ${a.nombres}`;
-}
-
-// Para buscar sin importar mayúsculas ni acentos ("lopez" encuentra "López")
-function normalizar(texto) {
-    return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().trim();
 }

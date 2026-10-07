@@ -69,7 +69,9 @@ SafeBand.api\
     │   │       ├── login.js       ← inicio de sesión
     │   │       ├── vivo.js        ← "En vivo": última detección + historial
     │   │       ├── alumnos.js     ← "Alumnos": lista, búsqueda, formulario con pulsera, baja/reactivar
-    │   │       └── pendiente.js   ← temporal para secciones aún no construidas
+    │   │       ├── tutores.js     ← "Tutores": lista, búsqueda, formulario con sus hijos, baja/reactivar
+    │   │       ├── zonas.js       ← "Zonas y nodos": zonas agrupadas con sus nodos, formularios, baja/reactivar
+    │   │       └── pulseras.js    ← "Pulseras": inventario, filtro asignadas/libres, última señal, baja/reactivar
     │   ├── monitor.html           ← página simple de lecturas SIN login (respaldo para el checkpoint)
     │   ├── monitor.js
     │   └── monitor.css
@@ -676,7 +678,11 @@ Configuración física de la escuela. **Por ahora abiertos (sin login).**
 |---|---|---|
 | En vivo | Todos | ✅ Lista |
 | Alumnos | Administrador | ✅ Lista |
-| Pulseras, Tutores, Zonas y nodos | Administrador | ⏳ Pendientes (muestran aviso; mientras tanto, Swagger) |
+| Tutores | Administrador | ✅ Lista |
+| Zonas y nodos | Administrador | ✅ Lista |
+| Pulseras | Administrador | ✅ Lista |
+
+Con esto todas las secciones de administración están construidas (se eliminó la vista temporal `pendiente.js`).
 
 ### Pantalla "Alumnos" (`js\vistas\alumnos.js`)
 | Función | Cómo | API |
@@ -700,7 +706,78 @@ Configuración física de la escuela. **Por ahora abiertos (sin login).**
 - Nuevo `POST /api/alumnos/{id}/reactivar`.
 - Si se crea una pulsera nueva pero falla el guardado del alumno, la pulsera queda registrada y seleccionada, para no registrarla dos veces al reintentar.
 
-**Componentes reutilizables nuevos en `ui.js`:** `avisoBreve(texto)`, `confirmar({ titulo, mensaje, aceptar, peligro })` (diálogo nativo `<dialog>`, devuelve true/false), `edad("AAAA-MM-DD")`.
+**Componentes reutilizables en `ui.js`** (los usan Alumnos y Tutores, y los usarán las siguientes pantallas):
+| Función | Para qué |
+|---|---|
+| `avisoBreve(texto)` | Aviso abajo unos segundos ("Alumno agregado") |
+| `confirmar({ titulo, mensaje, aceptar, peligro })` | Diálogo nativo `<dialog>`; devuelve true/false |
+| `campo(id, etiqueta, input, { opcional, ayuda, ancho })` | Campo con etiqueta, ayuda y espacio para su error (`ponerError`, `limpiar`) |
+| `crearCajon({ titulo, subtitulo, contenido, pie, alEnviar, alCerrar })` | Panel lateral con formulario; se cierra con Esc, X o tocando fuera, y regresa el foco |
+| `normalizar(texto)` | Para buscar sin mayúsculas ni acentos |
+| `edad("AAAA-MM-DD")` | Edad en años |
+
+### Pantalla "Tutores" (`js\vistas\tutores.js`)
+| Función | Cómo | API |
+|---|---|---|
+| Lista | Nombre, correo, teléfono e **hijos** (etiquetas con sus nombres) | `GET /api/tutores` |
+| Buscar | Por nombre o correo | — |
+| Ver dados de baja | Casilla | `?incluirInactivos=true` |
+| Agregar / editar | Panel lateral: datos del tutor **+ sus hijos** | `POST` / `PUT /api/tutores` con `hijos` |
+| Hijos | Elegir alumno activo → "Agregar". Por cada hijo: **parentesco** (con sugerencias: Madre, Padre, Abuela...; se puede escribir otro), **Contacto principal**, **Puede recogerlo**, y "Quitar" | Se mandan todos juntos al guardar |
+| Dar de baja / Reactivar | Igual que en Alumnos | `DELETE` / `POST /api/tutores/{id}/reactivar` |
+
+Aviso en el formulario: un tutor sin hijos vinculados **no verá a ningún alumno** en la app.
+
+**Cambios en la API para esta pantalla:**
+- `GuardarTutorRequest` acepta `hijos: [{ alumnoId, parentesco, esContactoPrincipal, puedeRecoger }]`. Tutor y vínculos se guardan **en una sola operación**.
+  - `hijos` = `null` (no se envía) → no se tocan los vínculos (compatibilidad con Swagger y los endpoints de vincular).
+  - `hijos` = lista → los vínculos quedan **exactamente** como la lista: agrega nuevos, actualiza existentes y quita los que no vienen.
+  - Los vínculos con alumnos **dados de baja** no se tocan (no se ven en la pantalla y se conservan por si se reactivan).
+  - Validaciones: alumno repetido en la lista → 400; alumno inexistente o dado de baja → 400.
+  - Contacto principal: al marcarlo, los demás tutores de ese niño dejan de serlo.
+- Nuevo `POST /api/tutores/{id}/reactivar`.
+- Los endpoints `PUT/DELETE /api/tutores/{id}/alumnos/{alumnoId}` siguen existiendo (vincular de uno en uno).
+
+### Pantalla "Zonas y nodos" (`js\vistas\zonas.js`)
+Las zonas se muestran como **grupos**, cada una con la tabla de sus nodos adentro (las zonas contienen nodos).
+
+| Función | Cómo | API |
+|---|---|---|
+| Lista | Cada zona: nombre, tipo y sus nodos (código, descripción, umbral, último dato). Etiquetas "Portátil" y "En línea" (mandó datos hace menos de 2 min) | `GET /api/zonas`, `GET /api/nodos` (en paralelo) |
+| Ver dados de baja | Casilla (zonas con borde punteado, nodos atenuados) | `?incluirInactivas=true` / `?incluirInactivos=true` |
+| Agregar / editar zona | Nombre y tipo (Salón, Patio, Tienda, Entrada, Perímetro, Otra) | `POST` / `PUT /api/zonas` |
+| Agregar / editar nodo | Código (= el del firmware), zona, descripción, umbral (dBm) y si es portátil. "Agregar nodo aquí" en una zona la deja preseleccionada | `POST` / `PUT /api/nodos` |
+| Dar de baja / reactivar | Con confirmación. Una zona con nodos activos no se puede dar de baja (409, se muestra el mensaje). Un nodo no se reactiva si su zona está dada de baja | `DELETE`, `POST .../reactivar` |
+
+Si no hay zonas y se intenta agregar un nodo, abre primero el formulario de zona.
+
+**Nota sobre "En línea":** un nodo solo manda datos cuando ve una pulsera, así que "sin datos recientes" no siempre significa apagado. Se resolverá con el latido (prototipo alfa).
+
+**Cambios en la API:** nuevos `POST /api/zonas/{id}/reactivar` y `POST /api/nodos/{id}/reactivar` (este último exige que la zona esté activa).
+
+### Pantalla "Pulseras" (`js\vistas\pulseras.js`) — el inventario
+Alumnos ve las cosas desde el niño ("¿qué pulsera tiene Ana?"); esta pantalla, desde las pulseras ("¿cuántas hay, cuáles están libres, cuáles no dan señal?").
+
+| Función | Cómo | API |
+|---|---|---|
+| Lista | Pulsera, UID NFC, alumno (o etiqueta **Libre**), última señal | `GET /api/pulseras` |
+| Resumen | "3 activas: 2 asignadas y 1 libre" | — |
+| Filtrar | **Todas / Asignadas / Libres** + búsqueda por pulsera, NFC o alumno | — |
+| **Revisar** | Etiqueta ámbar en pulseras **asignadas** sin señal en más de 24 h (o nunca): batería agotada, dañada o el niño no la trae | — |
+| Registrar / editar | Identificador `SB-XXXX`, UID NFC (opcional) y **alumno** (libres + el actual) en el mismo formulario | `POST` / `PUT /api/pulseras` con `alumnoId` |
+| Cambiar de alumno | Si la pulsera ya era de un niño y se cambia o se libera, **pide confirmación** ("Fernanda se quedará sin pulsera") | |
+| Dar de baja / reactivar | Con confirmación | `DELETE`, `POST /api/pulseras/{id}/reactivar` |
+
+**Cambios en la API para esta pantalla:**
+- `GuardarPulseraRequest` acepta `alumnoId`. Pulsera y alumno se guardan **en una sola operación**.
+  - `POST`: si viene `alumnoId`, la pulsera nace asignada.
+  - `PUT`: es el estado completo → `alumnoId: null` la deja **libre**. Cambiar de un alumno a otro desde aquí se permite (es explícito y la pantalla lo confirma).
+  - Reglas: alumno inexistente o dado de baja → 400; el alumno ya tiene otra pulsera activa → 409; pulsera dada de baja no se asigna → 400.
+- **Dar de baja ahora libera la pulsera** (`AlumnoId = null`): el alumno puede recibir otra de inmediato. El historial no se pierde porque cada lectura guarda su propio `AlumnoId`.
+- Nuevo `POST /api/pulseras/{id}/reactivar` (vuelve **libre**).
+- `PUT /api/pulseras/{id}/alumno` sigue existiendo (asignar de uno en uno, con la regla de no quitarle la pulsera a otro niño).
+
+**Registro en lote** (ej. "SB-0004 a SB-0033"): no se hizo; se puede agregar después sin cambiar lo demás.
 
 **Seguridad en el frontend:** todos los datos se insertan con `textContent` (función `el()` de `ui.js`), nunca con `innerHTML`, para que un nombre como `<script>` no se ejecute.
 
@@ -984,9 +1061,9 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
   - [ ] 5. Frontend:
     - [x] Login, estructura del panel (menú, usuario, cerrar sesión), vista "En vivo"
     - [x] Alumnos (con asignación de pulsera en el mismo formulario y reactivar)
-    - [ ] Pulseras (lista general, baja de pulseras perdidas)
-    - [ ] Tutores
-    - [ ] Zonas y nodos
+    - [x] Pulseras (inventario, filtro, última señal, baja/reactivar)
+    - [x] Tutores (con sus hijos en el mismo formulario y reactivar)
+    - [x] Zonas y nodos
     - [ ] Vista de padre (después del paso 3)
   - [ ] 6. Clave (API key) por nodo para que nadie mande lecturas falsas
 - [ ] Después: alumnos, tutores, grupos, alertas, tienda, recogida, PWA
@@ -1030,3 +1107,6 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-02 | Frontend profesional (paso 5, parte 1): panel con login, menú por rol y vista "En vivo". Colores claros con azul, tipografía Atkinson Hyperlegible, motivo de ondas BLE. Revisado en escritorio y celular. La página anterior pasó a `monitor.html` (sin login, respaldo del checkpoint). |
 | 2026-10-03 | Pantalla "Alumnos": lista con búsqueda, panel lateral para agregar/editar con la pulsera en el mismo formulario (libre o nueva), baja con confirmación y reactivar. API: alumno + pulsera en una sola operación, `AlumnoResponse.pulsera` como objeto, `POST /api/alumnos/{id}/reactivar`. Revisado en escritorio y celular con datos simulados en el navegador. Detectado: el historial de lecturas depende de la asignación actual de la pulsera (anotado en pendientes). |
 | 2026-10-03 | Historial fiel: cada lectura guarda el `AlumnoId` que tenía la pulsera al recibirse; `GET /api/lecturas` muestra ese alumno. Migración `GuardarAlumnoEnLecturas` aplicada. Las 95 lecturas previas quedan sin alumno (la pulsera no tenía dueño en ese momento). Alumnos dados de alta por Fernando desde el panel: Fernanda Arellano (SB-0001), Kevin Osmar (SB-002), Jason Hamed (SB-003). |
+| 2026-10-03 | Pantalla "Tutores": lista con hijos, panel lateral con datos + hijos (parentesco, contacto principal, puede recoger), baja y reactivar. API: tutor + hijos en una sola operación, `POST /api/tutores/{id}/reactivar`. Código compartido movido a `ui.js` (`campo`, `crearCajon`, `normalizar`); Alumnos lo usa sin cambios de comportamiento. Revisado con datos simulados. |
+| 2026-10-03 | Pantalla "Zonas y nodos": zonas agrupadas con sus nodos, formularios de zona y nodo, "Agregar nodo aquí", etiquetas Portátil / En línea, baja y reactivar. API: `POST /api/zonas/{id}/reactivar` y `POST /api/nodos/{id}/reactivar`. Revisado con datos simulados. |
+| 2026-10-03 | Pantalla "Pulseras": inventario con filtro Todas/Asignadas/Libres, etiqueta "Revisar" (asignada sin señal > 24 h), formulario con alumno y confirmación al quitarle la pulsera a un niño, baja y reactivar. API: `alumnoId` en `GuardarPulseraRequest`, baja libera la pulsera, `POST /api/pulseras/{id}/reactivar`. Todas las secciones de administración terminadas. |

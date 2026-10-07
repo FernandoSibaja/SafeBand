@@ -3,8 +3,9 @@ using System.ComponentModel.DataAnnotations;
 namespace SafeBand.api.Contracts;
 
 /// <summary>
-/// JSON para dar de alta o editar una pulsera. Ejemplo:
-/// { "identificadorBle": "SB-0002", "uidNfc": "04A1B2C3D4E5F6" }
+/// JSON para dar de alta o editar una pulsera (y a qué alumno pertenece, en la misma operación). Ejemplo:
+/// { "identificadorBle": "SB-0002", "uidNfc": "04A1B2C3D4E5F6", "alumnoId": 3 }
+/// alumnoId = null → la pulsera queda libre.
 /// </summary>
 public record GuardarPulseraRequest(
     // Debe empezar con "SB-": los nodos solo escuchan anuncios con ese prefijo.
@@ -16,7 +17,9 @@ public record GuardarPulseraRequest(
 
     // UID del sticker NFC en hexadecimal; se aceptan separadores (04:A1:B2...) y se quitan.
     [property: StringLength(40, ErrorMessage = "El campo 'uidNfc' es demasiado largo.")]
-    string? UidNfc = null);
+    string? UidNfc = null,
+
+    int? AlumnoId = null);
 
 /// <summary>JSON para asignar (o quitar) la pulsera a un alumno. alumnoId = null la deja sin asignar.</summary>
 public record AsignarPulseraRequest(int? AlumnoId);

@@ -20,6 +20,7 @@ public static class ZonasNodosEndpoints
         zonas.MapPost("/", CrearZona).WithSummary("Da de alta una zona");
         zonas.MapPut("/{id:int}", EditarZona).WithSummary("Edita nombre o tipo de una zona");
         zonas.MapDelete("/{id:int}", DarDeBajaZona).WithSummary("Da de baja una zona (solo si ya no tiene nodos activos)");
+        zonas.MapPost("/{id:int}/reactivar", ReactivarZona).WithSummary("Vuelve a activar una zona dada de baja");
 
         var nodos = app.MapGroup("/api/nodos").WithTags("Nodos")
             .RequireAuthorization(Politicas.SoloAdministrador);
@@ -28,6 +29,7 @@ public static class ZonasNodosEndpoints
         nodos.MapPost("/", CrearNodo).WithSummary("Da de alta un nodo (el código debe coincidir con el del firmware)");
         nodos.MapPut("/{id:int}", EditarNodo).WithSummary("Edita un nodo (cambiar de zona, umbral, descripción...)");
         nodos.MapDelete("/{id:int}", DarDeBajaNodo).WithSummary("Da de baja un nodo: la API rechaza sus lecturas");
+        nodos.MapPost("/{id:int}/reactivar", ReactivarNodo).WithSummary("Vuelve a activar un nodo (su zona debe estar activa)");
     }
 
     // =================== Zonas ===================
@@ -84,6 +86,16 @@ public static class ZonasNodosEndpoints
             return Results.Conflict(new { error = $"La zona '{zona.Nombre}' tiene nodos activos. Muévelos a otra zona o dalos de baja primero." });
 
         zona.Activa = false;
+        await db.SaveChangesAsync();
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> ReactivarZona(int id, AppDbContext db)
+    {
+        var zona = await db.Zonas.FindAsync(id);
+        if (zona is null) return Results.NotFound(new { error = $"No existe la zona {id}." });
+
+        zona.Activa = true;
         await db.SaveChangesAsync();
         return Results.NoContent();
     }
@@ -148,6 +160,18 @@ public static class ZonasNodosEndpoints
         if (nodo is null) return Results.NotFound(new { error = $"No existe el nodo {id}." });
 
         nodo.Activo = false;   // desde ahora, POST /api/lecturas de este nodo responde 400
+        await db.SaveChangesAsync();
+        return Results.NoContent();
+    }
+
+    private static async Task<IResult> ReactivarNodo(int id, AppDbContext db)
+    {
+        var nodo = await db.Nodos.Include(n => n.Zona).FirstOrDefaultAsync(n => n.Id == id);
+        if (nodo is null) return Results.NotFound(new { error = $"No existe el nodo {id}." });
+        if (!nodo.Zona.Activa)
+            return Results.BadRequest(new { error = $"La zona '{nodo.Zona.Nombre}' está dada de baja. Reactívala o mueve el nodo a otra zona primero." });
+
+        nodo.Activo = true;
         await db.SaveChangesAsync();
         return Results.NoContent();
     }
