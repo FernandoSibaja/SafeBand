@@ -1,11 +1,12 @@
 // ============================================================
 // Vista "Mis hijos" (rol Padre) → GET /api/mis-hijos, cada 10 segundos
-// Una tarjeta por hijo: dónde está ahora, su estado y su recorrido de hoy.
-// La API solo devuelve los hijos de este padre.
+// Una tarjeta por hijo: dónde está ahora (texto y plano), su estado y su recorrido de hoy.
+// La API solo devuelve los hijos de este padre. El plano (GET /api/plano) se pide una vez.
 // ============================================================
 
 import { api } from "../api.js";
 import { el, hora, haceCuanto, fechaHora, esReciente } from "../ui.js";
+import { dibujarPlano } from "../plano.js";
 
 const INTERVALO_MS = 10000;
 const MINUTOS_RECIENTE = 30;   // si la última detección es más vieja, se dice "último lugar donde se detectó"
@@ -25,13 +26,20 @@ export function vistaHijos(contenedor) {
         lista);
 
     let detenido = false;
+    let plano = null;   // { ancho, alto, zonas }; null mientras no se haya podido cargar
 
     async function cargar() {
         // "Hoy" según la hora del celular del padre: desde la medianoche local
         const medianoche = new Date();
         medianoche.setHours(0, 0, 0, 0);
         try {
-            const hijos = await api(`/api/mis-hijos?desde=${encodeURIComponent(medianoche.toISOString())}`);
+            // El plano casi nunca cambia: se pide hasta conseguirlo y luego se reutiliza.
+            // Si falla, las tarjetas se muestran solo con texto.
+            const [hijos, planoNuevo] = await Promise.all([
+                api(`/api/mis-hijos?desde=${encodeURIComponent(medianoche.toISOString())}`),
+                plano ? plano : api("/api/plano").catch(() => null),
+            ]);
+            plano = planoNuevo;
             if (detenido) return;
             aviso.hidden = true;
             indicador.classList.remove("desconectado");
@@ -53,7 +61,7 @@ export function vistaHijos(contenedor) {
                 "La escuela debe agregarte como tutor de tus hijos. Si crees que es un error, comunícate con la escuela."));
             return;
         }
-        lista.replaceChildren(...hijos.map(tarjeta));
+        lista.replaceChildren(...hijos.map((h) => tarjeta(h, plano)));
     }
 
     cargar();
@@ -61,7 +69,7 @@ export function vistaHijos(contenedor) {
     return () => { detenido = true; clearInterval(temporizador); };
 }
 
-function tarjeta(h) {
+function tarjeta(h, plano) {
     const u = h.ultima;
     const reciente = u && (Date.now() - new Date(u.timestamp).getTime()) / 60000 < MINUTOS_RECIENTE;
 
@@ -93,6 +101,8 @@ function tarjeta(h) {
                         u.bateriaBaja && el("span", { class: "etiqueta alerta" }, "Batería baja")),
                 ]),
 
+        u && planoDelHijo(h, u, reciente, plano),
+
         el("section", { class: "recorrido", "aria-label": `Recorrido de hoy de ${h.nombre}` },
             el("h3", {}, "Hoy"),
             h.recorrido.length === 0
@@ -100,6 +110,25 @@ function tarjeta(h) {
                 : el("ol", {}, h.recorrido.map((t) => el("li", {},
                     el("span", { class: "recorrido-hora" }, rango(t)),
                     el("span", {}, t.zona))))));
+}
+
+// Plano con la zona de la última detección resaltada (null si la escuela no ha dibujado zonas)
+function planoDelHijo(h, u, reciente, plano) {
+    if (!plano || plano.zonas.length === 0) return null;
+    const enPlano = plano.zonas.some((z) => z.id === u.zonaId);
+    const estilo = u.sos ? "sos" : reciente ? "actual" : "antigua";
+    const descripcion = enPlano
+        ? `Plano de la escuela: ${h.nombre} ${reciente ? "está en" : "se detectó por última vez en"} ${u.zona}`
+        : "Plano de la escuela";
+    return el("div", { class: "hijo-plano" },
+        el("div", { class: "plano-marco" },
+            dibujarPlano(plano.zonas, {
+                resaltada: enPlano ? u.zonaId : null,
+                estilo,
+                marcador: h.nombre.trim().charAt(0).toUpperCase(),
+                etiqueta: descripcion,
+            })),
+        !enPlano && el("p", { class: "secundario nota" }, `La zona «${u.zona}» todavía no está dibujada en el plano.`));
 }
 
 // "8:02 – 8:40", o solo "8:02" si fue una sola detección

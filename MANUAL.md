@@ -762,6 +762,7 @@ Con esto todas las secciones de administración están construidas (se eliminó 
 **"Mis hijos" (`hijos.js`)**, pensada para el celular, se actualiza cada 10 s:
 - Una **tarjeta por hijo**: nombre, su pulsera, **la zona donde está** en grande ("Está en Salón 3°A", o "Último lugar donde se detectó" si fue hace más de 30 min), hace cuánto, y etiquetas *Pulsera puesta / quitada* y *Batería baja*.
 - Si presionó **SOS**: borde rojo y aviso rojo arriba de la tarjeta.
+- **Plano** (si la escuela ya dibujó zonas): la zona de la última detección resaltada, con un círculo con la inicial del niño. Colores: **azul** = detectado hace menos de 30 min; **gris punteado** = último lugar donde se detectó (más de 30 min); **rojo** = SOS. Si su zona no está dibujada, se muestra el plano con la nota "La zona «X» todavía no está dibujada en el plano". Si no hay ninguna zona dibujada, no aparece el plano (solo texto). El plano se pide una vez (`GET /api/plano`) y se reutiliza en cada actualización.
 - **Hoy**: el recorrido del día, ej. "8:02 – 8:40 Salón 3°A". "Hoy" se calcula con la medianoche de la hora del celular.
 - Sin hijos vinculados: mensaje para comunicarse con la escuela.
 
@@ -1122,11 +1123,11 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 - [ ] Desplegar en Azure (App Service + Azure SQL)
 - [ ] **Pedido del profesor:** prueba de alcance BLE (modo calibración en el nodo; 1-20 m, con pared y con cuerpo) → obtener `RSSI_a_1m` y `n`
 - [ ] **Pedido del profesor:** triangulación → X/Y en `Nodos`, cálculo de posición en la API, `GET /api/ubicaciones`, página de mapa con marcadores
-  - [ ] Paso 1: plano por zonas
+  - [x] Paso 1: plano por zonas
     - [x] Parte 1: rectángulo en `Zona` (`PlanoX/Y/Ancho/Alto`) + migración `AgregarPlanoZonas`
     - [x] Parte 2: API guarda y valida `plano`, `GET /api/plano`, `zonaId` en `mis-hijos`
     - [x] Parte 3: campos del rectángulo y vista previa en la pantalla Zonas
-    - [ ] Parte 4: plano con la zona resaltada en "Mis hijos"
+    - [x] Parte 4: plano con la zona resaltada en "Mis hijos"
   - [ ] Paso 2: prueba de alcance → `RSSI_1m` y `n`
   - [ ] Paso 3: X/Y de los nodos y cálculo de posición en la API
   - [ ] Paso 4: punto con círculo de incertidumbre en el plano
@@ -1207,3 +1208,4 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-07 | Registro de padres, parte B (pantallas): columna y sección "Cuenta" en Tutores con hoja de invitación imprimible; "Crear mi cuenta" en la entrada con aviso de privacidad (borrador); vista "Mis hijos" para el padre. "En vivo" solo para personal. Migración `AgregarInvitaciones` creada. |
 | 2026-10-14 | Plano por zonas, partes 1 y 2 (API): rectángulo en metros por zona (`PlanoX`, `PlanoY`, `PlanoAncho`, `PlanoAlto`, migración `AgregarPlanoZonas`), campo `plano` en alta/edición de zonas con validación, nuevo `GET /api/plano` (cualquier usuario con sesión) y `zonaId` en la última detección de `mis-hijos`. Probado: guardar, 3 casos inválidos (400), quitar con `null`, plano sin sesión (401). |
 | 2026-10-14 | Plano por zonas, parte 3 (pantalla Zonas): nuevo `js/plano.js` (dibuja el plano en SVG, escalado a la pantalla), tarjeta "Plano de la escuela" en Zonas y nodos (tocar una zona la edita), sección "Ubicación en el plano" en el formulario de zona con vista previa en vivo y aviso de zonas encimadas. Probado en el navegador: guardar, aviso de encimado, error de ancho 0 junto al campo, vista en celular (375 px sin desplazamiento horizontal). Las zonas se dejaron sin dibujar. `.ayuda-campo` ahora aplica también fuera de un campo. |
+| 2026-10-14 | Plano por zonas, parte 4 (Mis hijos): cada tarjeta muestra el plano con la zona de la última detección resaltada y un círculo con la inicial (azul = reciente, gris punteado = más de 30 min, rojo = SOS); nota si la zona no está dibujada; sin plano si la escuela no ha dibujado zonas. `plano.js`: opciones `estilo` y `marcador`. Probado con datos simulados (4 hijos, uno por caso) en escritorio y celular. **Paso 1 terminado.** |

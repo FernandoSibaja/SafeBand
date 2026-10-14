@@ -642,6 +642,18 @@ td.acciones { text-align: right; width: 1%; }
 .plano-zona.tocable:hover rect { stroke: var(--azul); }
 .plano-zona.tocable:focus { outline: none; }
 .plano-zona.tocable:focus-visible rect { stroke: var(--azul); stroke-width: 3px; }
+/* Zona resaltada según qué tan reciente es la detección (Mis hijos) */
+.plano-zona.resaltada.antigua rect { fill: var(--fondo); stroke: var(--tinta-suave); stroke-width: 2px; stroke-dasharray: 6 4; }
+.plano-zona.resaltada.antigua text { fill: var(--tinta-suave); }
+.plano-zona.resaltada.sos rect { fill: var(--peligro-fondo); stroke: var(--peligro); }
+.plano-zona.resaltada.sos text { fill: var(--peligro); }
+.plano-marcador circle { fill: var(--azul); stroke: var(--superficie); stroke-width: 2px; }
+.plano-marcador.antigua circle { fill: var(--tinta-suave); }
+.plano-marcador.sos circle { fill: var(--peligro); }
+.plano-marcador text { fill: #fff; font-family: var(--fuente); font-weight: 700; }
+.hijo-plano { margin-top: 14px; }
+.hijo-plano .nota { margin-top: 6px; }
+
 .subtitulo-form { font-size: var(--t-base); margin: 22px 0 10px; padding-top: 16px; border-top: 1px solid var(--linea); }
 .aviso-encime { color: var(--alerta); margin-top: 8px; }
 

@@ -36,11 +36,15 @@ export function seEnciman(a, b) {
 /**
  * Devuelve un <svg> con el plano.
  * - resaltada: id de la zona que se pinta en azul (o null).
+ * - estilo: cómo se pinta la resaltada: "actual" (azul), "antigua" (gris punteado) o "sos" (rojo).
+ * - marcador: texto corto (p. ej. la inicial del niño) que se dibuja en un círculo dentro de la resaltada.
  * - alClic(zona): si se pasa, cada zona se puede tocar o elegir con teclado.
  * - cuadricula: dibuja líneas cada metro (útil al capturar medidas).
  * - etiqueta: descripción para lectores de pantalla.
  */
-export function dibujarPlano(zonas, { resaltada = null, alClic = null, cuadricula = false, etiqueta = "Plano de la escuela" } = {}) {
+export function dibujarPlano(zonas, {
+    resaltada = null, estilo = "actual", marcador = null, alClic = null, cuadricula = false, etiqueta = "Plano de la escuela",
+} = {}) {
     const { ancho, alto } = medidasPlano(zonas);
     const vista = `${-MARGEN} ${-MARGEN} ${ancho + 2 * MARGEN} ${alto + 2 * MARGEN}`;
     const letraBase = Math.min(1.4, Math.max(0.35, Math.max(ancho, alto) / 16));
@@ -61,7 +65,7 @@ export function dibujarPlano(zonas, { resaltada = null, alClic = null, cuadricul
         // Letra más chica si el nombre no cabe a lo ancho de la zona
         const letra = Math.min(letraBase, (z.ancho * 0.9) / Math.max(4, z.nombre.length * 0.55), z.alto * 0.45);
         const grupo = svg("g", {
-            class: ["plano-zona", esResaltada && "resaltada", alClic && "tocable"].filter(Boolean).join(" "),
+            class: ["plano-zona", esResaltada && "resaltada", esResaltada && estilo, alClic && "tocable"].filter(Boolean).join(" "),
             tabindex: alClic ? "0" : null,
             role: alClic ? "button" : null,
             "aria-label": alClic ? `Editar zona ${z.nombre}` : null,
@@ -76,6 +80,16 @@ export function dibujarPlano(zonas, { resaltada = null, alClic = null, cuadricul
             });
         }
         raiz.append(grupo);
+
+        // Marcador: círculo con texto en la esquina superior derecha de la zona resaltada
+        if (esResaltada && marcador) {
+            const r = Math.min(letraBase * 0.95, z.ancho / 4, z.alto / 4);
+            const cx = z.x + z.ancho - r - Math.min(0.3, r / 2);
+            const cy = z.y + r + Math.min(0.3, r / 2);
+            raiz.append(svg("g", { class: `plano-marcador ${estilo}`, "aria-hidden": "true" },
+                svg("circle", { cx, cy, r, "vector-effect": "non-scaling-stroke" }),
+                svg("text", { x: cx, y: cy, "font-size": r * 1.1, "text-anchor": "middle", "dominant-baseline": "central" }, marcador)));
+        }
     }
     return raiz;
 }
