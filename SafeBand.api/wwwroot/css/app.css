@@ -606,7 +606,7 @@ td.acciones { text-align: right; width: 1%; }
     border-radius: var(--r-control);
 }
 .campo .opcional { font-weight: 400; color: var(--tinta-suave); }
-.campo .ayuda-campo { color: var(--tinta-suave); font-size: var(--t-xs); }
+.ayuda-campo { color: var(--tinta-suave); font-size: var(--t-xs); }
 .campo .error-campo { color: var(--peligro); font-size: var(--t-xs); font-weight: 700; }
 .campo.con-error input, .campo.con-error select { border-color: var(--peligro); }
 
@@ -618,6 +618,32 @@ td.acciones { text-align: right; width: 1%; }
 .separador-form p { color: var(--tinta-suave); font-size: var(--t-sm); }
 
 /* ---------- Zonas y sus nodos (agrupados) ---------- */
+
+/* ---------- Plano de la escuela (js/plano.js) ---------- */
+
+.plano-tarjeta {
+    background: var(--superficie);
+    border: 1px solid var(--linea);
+    border-radius: var(--r-panel);
+    padding: 14px 16px 16px;
+    margin-bottom: 16px;
+}
+.plano-encabezado { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 10px; }
+.plano-encabezado h2 { font-size: var(--t-lg); }
+.plano-marco { background: var(--azul-tenue); border-radius: var(--r-control); padding: 8px; }
+.plano-svg { display: block; width: 100%; height: auto; max-height: 420px; }
+.plano-previa .plano-svg { max-height: 260px; }
+.plano-cuadricula line { stroke: var(--linea); stroke-width: 0.03; }
+.plano-zona rect { fill: var(--superficie); stroke: #B9C7D8; stroke-width: 1.5px; }
+.plano-zona text { fill: var(--tinta-suave); font-family: var(--fuente); font-weight: 700; pointer-events: none; }
+.plano-zona.resaltada rect { fill: var(--azul-claro); stroke: var(--azul); stroke-width: 3px; }
+.plano-zona.resaltada text { fill: var(--azul); }
+.plano-zona.tocable { cursor: pointer; }
+.plano-zona.tocable:hover rect { stroke: var(--azul); }
+.plano-zona.tocable:focus { outline: none; }
+.plano-zona.tocable:focus-visible rect { stroke: var(--azul); stroke-width: 3px; }
+.subtitulo-form { font-size: var(--t-base); margin: 22px 0 10px; padding-top: 16px; border-top: 1px solid var(--linea); }
+.aviso-encime { color: var(--alerta); margin-top: 8px; }
 
 .zonas { display: grid; gap: 16px; }
 .zona {

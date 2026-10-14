@@ -18,9 +18,14 @@ public static class ZonasNodosEndpoints
         zonas.MapGet("/", ListarZonas).WithSummary("Lista de zonas (?incluirInactivas=true)");
         zonas.MapGet("/{id:int}", ObtenerZona);
         zonas.MapPost("/", CrearZona).WithSummary("Da de alta una zona");
-        zonas.MapPut("/{id:int}", EditarZona).WithSummary("Edita nombre o tipo de una zona");
+        zonas.MapPut("/{id:int}", EditarZona).WithSummary("Edita nombre, tipo o rectángulo en el plano de una zona");
         zonas.MapDelete("/{id:int}", DarDeBajaZona).WithSummary("Da de baja una zona (solo si ya no tiene nodos activos)");
         zonas.MapPost("/{id:int}/reactivar", ReactivarZona).WithSummary("Vuelve a activar una zona dada de baja");
+
+        // El plano lo ve cualquier usuario con sesión (los padres lo usan en "Mis hijos").
+        // Solo trae nombres y rectángulos de las zonas, nada de alumnos.
+        app.MapGet("/api/plano", ObtenerPlano).WithTags("Zonas").RequireAuthorization()
+            .WithSummary("Plano de la escuela: zonas activas con su rectángulo en metros");
 
         var nodos = app.MapGroup("/api/nodos").WithTags("Nodos")
             .RequireAuthorization(Politicas.SoloAdministrador);
@@ -54,6 +59,7 @@ public static class ZonasNodosEndpoints
             return Results.Conflict(new { error = $"Ya existe una zona llamada '{nombre}'." });
 
         var zona = new Zona { Nombre = nombre, Tipo = req.Tipo!.Value };
+        AsignarPlano(zona, req.Plano);
         db.Zonas.Add(zona);
         await db.SaveChangesAsync();
 
@@ -72,6 +78,7 @@ public static class ZonasNodosEndpoints
 
         zona.Nombre = nombre;
         zona.Tipo = req.Tipo!.Value;
+        AsignarPlano(zona, req.Plano);
         await db.SaveChangesAsync();
         return Results.NoContent();
     }
@@ -101,7 +108,33 @@ public static class ZonasNodosEndpoints
     }
 
     private static IQueryable<ZonaResponse> ProyectarZonas(IQueryable<Zona> q) =>
-        q.Select(z => new ZonaResponse(z.Id, z.Nombre, z.Tipo, z.Activa, z.Nodos.Count(n => n.Activo)));
+        q.Select(z => new ZonaResponse(z.Id, z.Nombre, z.Tipo, z.Activa, z.Nodos.Count(n => n.Activo),
+            z.PlanoX == null ? null : new RectanguloPlano(z.PlanoX, z.PlanoY, z.PlanoAncho, z.PlanoAlto)));
+
+    // null = quitar la zona del plano
+    private static void AsignarPlano(Zona zona, RectanguloPlano? plano)
+    {
+        zona.PlanoX = plano?.X;
+        zona.PlanoY = plano?.Y;
+        zona.PlanoAncho = plano?.Ancho;
+        zona.PlanoAlto = plano?.Alto;
+    }
+
+    // GET /api/plano
+    private static async Task<IResult> ObtenerPlano(AppDbContext db)
+    {
+        var zonas = await db.Zonas.AsNoTracking()
+            .Where(z => z.Activa && z.PlanoX != null)
+            .OrderBy(z => z.Nombre)
+            .Select(z => new ZonaEnPlano(z.Id, z.Nombre, z.Tipo,
+                z.PlanoX!.Value, z.PlanoY!.Value, z.PlanoAncho!.Value, z.PlanoAlto!.Value))
+            .ToListAsync();
+
+        // El plano mide lo que ocupe la zona más lejana (0 x 0 si todavía no hay zonas dibujadas)
+        var ancho = zonas.Count == 0 ? 0 : zonas.Max(z => z.X + z.Ancho);
+        var alto = zonas.Count == 0 ? 0 : zonas.Max(z => z.Y + z.Alto);
+        return Results.Ok(new PlanoResponse(ancho, alto, zonas));
+    }
 
     // =================== Nodos ===================
 

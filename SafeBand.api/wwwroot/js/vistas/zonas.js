@@ -1,13 +1,15 @@
 // ============================================================
 // Pantalla "Zonas y nodos" (solo Administrador)
 // Las zonas se muestran como grupos, cada una con sus nodos adentro.
-// - Agregar/editar zona (nombre y tipo) y nodo (código, zona, umbral...).
+// - Arriba, el plano de la escuela con las zonas dibujadas (tocar una la edita).
+// - Agregar/editar zona (nombre, tipo y rectángulo en el plano) y nodo (código, zona, umbral...).
 // - Dar de baja (con confirmación) y reactivar ambos.
 // API: /api/zonas, /api/nodos
 // ============================================================
 
 import { api } from "../api.js";
 import { el, icono, avisoBreve, confirmar, campo, crearCajon, haceCuanto } from "../ui.js";
+import { dibujarPlano, seEnciman } from "../plano.js";
 
 // Tipos de zona: valor de la API → texto para la persona
 const TIPOS = [
@@ -31,6 +33,7 @@ export function vistaZonas(contenedor) {
     const conteo = el("p", { class: "sub" }, "Cargando…");
     const aviso = el("div", { class: "aviso aviso-error", role: "alert", hidden: true });
     const lista = el("div", { class: "zonas" }, el("p", { class: "estado" }, "Cargando zonas…"));
+    const tarjetaPlano = el("section", { class: "plano-tarjeta", "aria-label": "Plano de la escuela", hidden: true });
 
     contenedor.append(
         el("header", { class: "encabezado" },
@@ -45,6 +48,7 @@ export function vistaZonas(contenedor) {
             el("label", { class: "casilla" },
                 el("input", { type: "checkbox", onchange: (e) => { incluirInactivos = e.target.checked; cargar(); } }),
                 "Mostrar dados de baja")),
+        tarjetaPlano,
         lista);
 
     // ---------- Lista ----------
@@ -76,6 +80,24 @@ export function vistaZonas(contenedor) {
             return;
         }
         lista.replaceChildren(...zonas.map(tarjetaZona));
+        dibujarTarjetaPlano();
+    }
+
+    // Plano con las zonas activas que ya tienen rectángulo; tocar una abre su formulario
+    function dibujarTarjetaPlano() {
+        const enPlano = zonasEnPlano(zonas.filter((z) => z.activa));
+        const sinDibujar = zonas.filter((z) => z.activa && !z.plano).length;
+        tarjetaPlano.hidden = false;
+        tarjetaPlano.replaceChildren(
+            el("div", { class: "plano-encabezado" },
+                el("h2", {}, "Plano de la escuela"),
+                enPlano.length > 0 && sinDibujar > 0 &&
+                    el("span", { class: "secundario" }, `${sinDibujar} ${sinDibujar === 1 ? "zona sin dibujar" : "zonas sin dibujar"}`)),
+            enPlano.length === 0
+                ? el("p", { class: "secundario" },
+                    "Ninguna zona está dibujada todavía. Edita una zona y llena «Ubicación en el plano» con sus medidas en metros; así los padres verán dónde está su hijo.")
+                : el("div", { class: "plano-marco" },
+                    dibujarPlano(enPlano, { alClic: (z) => formularioZona(zonas.find((x) => x.id === z.id)) })));
     }
 
     function tarjetaZona(z) {
@@ -136,6 +158,48 @@ export function vistaZonas(contenedor) {
             ayuda: "El tipo cambia cómo se usa la zona: en los salones se pasa lista y salir del perímetro genera alerta.",
         });
 
+        // --- Ubicación en el plano (rectángulo en metros) ---
+        const enPlano = el("input", { type: "checkbox", checked: zona?.plano != null });
+        const casillaPlano = el("label", { class: "casilla ancho" }, enPlano, "Dibujar esta zona en el plano");
+        const numero = (id, valor, min) => el("input", { id, type: "number", inputmode: "decimal", min, max: 1000, step: 0.5, value: valor ?? "" });
+        const px = campo("z-x", "X (desde la izquierda)", numero("z-x", zona?.plano?.x ?? 0, 0));
+        const py = campo("z-y", "Y (desde arriba)", numero("z-y", zona?.plano?.y ?? 0, 0));
+        const pancho = campo("z-ancho", "Ancho", numero("z-ancho", zona?.plano?.ancho ?? 8, 0.5));
+        const palto = campo("z-alto", "Alto", numero("z-alto", zona?.plano?.alto ?? 6, 0.5));
+        const camposPlano = [px, py, pancho, palto];
+        const avisoEncime = el("p", { class: "ayuda-campo aviso-encime", hidden: true });
+        const vistaPrevia = el("div", { class: "plano-marco plano-previa" });
+        const seccionPlano = el("div", { class: "grupo-campos" },
+            el("p", { class: "ayuda-campo ancho" },
+                "Medidas en metros. (0, 0) es la esquina superior izquierda de la escuela; X crece a la derecha y Y hacia abajo."),
+            px.nodo, py.nodo, pancho.nodo, palto.nodo,
+            el("div", { class: "ancho" }, vistaPrevia, avisoEncime));
+
+        // Rectángulo que hay en los campos ahora mismo (null si falta algún dato)
+        function rectanguloActual() {
+            const [x, y, an, al] = camposPlano.map((c) => c.input.value === "" ? NaN : Number(c.input.value));
+            return [x, y, an, al].some(Number.isNaN) ? null : { x, y, ancho: an, alto: al };
+        }
+
+        // Vista previa: las demás zonas en gris y esta en azul
+        function actualizarPrevia() {
+            seccionPlano.hidden = !enPlano.checked;
+            if (!enPlano.checked) return;
+            const otras = zonasEnPlano(zonas.filter((z) => z.activa && z.id !== zona?.id));
+            const rect = rectanguloActual();
+            const valido = rect && rect.ancho >= 0.5 && rect.alto >= 0.5 && rect.x >= 0 && rect.y >= 0;
+            const esta = valido ? [{ id: "esta", nombre: nombre.input.value.trim() || "Esta zona", ...rect }] : [];
+            vistaPrevia.replaceChildren(otras.length + esta.length === 0
+                ? el("p", { class: "secundario" }, "Escribe las medidas para ver la vista previa.")
+                : dibujarPlano([...otras, ...esta], { resaltada: "esta", cuadricula: true, etiqueta: "Vista previa del plano" }));
+            // Aviso (no bloquea): se encima con otra zona
+            const encimadas = valido ? otras.filter((o) => seEnciman(o, rect)).map((o) => o.nombre) : [];
+            avisoEncime.hidden = encimadas.length === 0;
+            avisoEncime.textContent = `Se encima con: ${encimadas.join(", ")}. Revisa las medidas si no es intencional.`;
+        }
+        enPlano.addEventListener("change", actualizarPrevia);
+        for (const c of [nombre, ...camposPlano]) c.input.addEventListener("input", actualizarPrevia);
+
         const avisoForm = el("div", { class: "aviso aviso-error", role: "alert", hidden: true });
         const botonGuardar = el("button", { type: "submit", class: "boton boton-primario" }, editando ? "Guardar cambios" : "Agregar zona");
         const accionEstado = !editando ? null
@@ -146,21 +210,33 @@ export function vistaZonas(contenedor) {
         const { cerrar } = crearCajon({
             titulo: editando ? zona.nombre : "Agregar zona",
             subtitulo: "Un área de la escuela: un salón, el patio, la tienda, la entrada...",
-            contenido: [avisoForm, el("div", { class: "grupo-campos" }, nombre.nodo, tipo.nodo)],
+            contenido: [
+                avisoForm,
+                el("div", { class: "grupo-campos" }, nombre.nodo, tipo.nodo),
+                el("h3", { class: "subtitulo-form" }, "Ubicación en el plano"),
+                casillaPlano,
+                seccionPlano,
+            ],
             pie: [accionEstado, botonesPie(() => cerrar(), botonGuardar)],
             alEnviar: guardar,
             alCerrar: () => { cerrarFormulario = null; },
         });
         cerrarFormulario = cerrar;
+        actualizarPrevia();
         nombre.input.focus();
 
         async function guardar(evento) {
             evento.preventDefault();
             avisoForm.hidden = true;
-            nombre.limpiar();
-            tipo.limpiar();
+            for (const c of [nombre, tipo, ...camposPlano]) c.limpiar();
             await conBoton(botonGuardar, async () => {
-                const datos = { nombre: nombre.input.value.trim(), tipo: selectorTipo.value };
+                // Campo vacío → null, para que la API diga cuál falta
+                const num = (c) => c.input.value === "" ? null : Number(c.input.value);
+                const datos = {
+                    nombre: nombre.input.value.trim(),
+                    tipo: selectorTipo.value,
+                    plano: enPlano.checked ? { x: num(px), y: num(py), ancho: num(pancho), alto: num(palto) } : null,
+                };
                 try {
                     if (editando) await api(`/api/zonas/${zona.id}`, { metodo: "PUT", cuerpo: datos });
                     else await api("/api/zonas", { metodo: "POST", cuerpo: datos });
@@ -168,7 +244,8 @@ export function vistaZonas(contenedor) {
                     avisoBreve(editando ? "Cambios guardados" : "Zona agregada");
                     cargar();
                 } catch (e) {
-                    repartirErrores(e, { nombre, tipo }, avisoForm, /zona|nombre/i, nombre);
+                    repartirErrores(e, { nombre, tipo, "plano.x": px, "plano.y": py, "plano.ancho": pancho, "plano.alto": palto },
+                        avisoForm, /zona|nombre/i, nombre);
                 }
             });
         }
@@ -303,6 +380,11 @@ export function vistaZonas(contenedor) {
 }
 
 // ---------- Ayudantes de esta pantalla ----------
+
+// Zonas de la API → rectángulos para plano.js (solo las que tienen plano)
+function zonasEnPlano(lista) {
+    return lista.filter((z) => z.plano).map((z) => ({ id: z.id, nombre: z.nombre, ...z.plano }));
+}
 
 function botonesPie(alCancelar, botonGuardar) {
     return el("div", { class: "derecha" },

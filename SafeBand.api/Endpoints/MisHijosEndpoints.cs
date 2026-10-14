@@ -54,7 +54,7 @@ public static class MisHijosEndpoints
             var ultima = await db.LecturasBle.AsNoTracking()
                 .Where(l => l.AlumnoId == h.AlumnoId)
                 .OrderByDescending(l => l.Timestamp)
-                .Select(l => new UltimaDeteccion(l.Nodo.Zona.Nombre, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja,
+                .Select(l => new UltimaDeteccion(l.Nodo.ZonaId, l.Nodo.Zona.Nombre, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja,
                     DateTime.SpecifyKind(l.Timestamp, DateTimeKind.Utc)))
                 .FirstOrDefaultAsync();
 

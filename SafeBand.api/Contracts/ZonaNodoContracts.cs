@@ -7,8 +7,9 @@ namespace SafeBand.api.Contracts;
 
 /// <summary>
 /// JSON para dar de alta o editar una zona. Ejemplo:
-/// { "nombre": "Patio", "tipo": "Patio" }
+/// { "nombre": "Patio", "tipo": "Patio", "plano": { "x": 0, "y": 6, "ancho": 15, "alto": 8 } }
 /// Tipos: Salon, Patio, Tienda, Entrada, Perimetro, Otra
+/// "plano" es opcional (null = la zona no se dibuja en el plano).
 /// </summary>
 public record GuardarZonaRequest(
     [property: Required(ErrorMessage = "El campo 'nombre' es obligatorio.")]
@@ -16,14 +17,53 @@ public record GuardarZonaRequest(
     string? Nombre,
 
     [property: Required(ErrorMessage = "El campo 'tipo' es obligatorio (Salon, Patio, Tienda, Entrada, Perimetro u Otra).")]
-    TipoZona? Tipo);
+    TipoZona? Tipo,
+
+    RectanguloPlano? Plano = null);
+
+/// <summary>
+/// Rectángulo de una zona en el plano de la escuela, en metros.
+/// (x, y) = esquina superior izquierda; x crece a la derecha, y hacia abajo.
+/// </summary>
+public record RectanguloPlano(
+    [property: Required(ErrorMessage = "El campo 'plano.x' es obligatorio.")]
+    [property: Range(0, 1000, ErrorMessage = "El campo 'plano.x' debe estar entre 0 y 1000 metros.")]
+    double? X,
+
+    [property: Required(ErrorMessage = "El campo 'plano.y' es obligatorio.")]
+    [property: Range(0, 1000, ErrorMessage = "El campo 'plano.y' debe estar entre 0 y 1000 metros.")]
+    double? Y,
+
+    [property: Required(ErrorMessage = "El campo 'plano.ancho' es obligatorio.")]
+    [property: Range(0.5, 1000, ErrorMessage = "El campo 'plano.ancho' debe estar entre 0.5 y 1000 metros.")]
+    double? Ancho,
+
+    [property: Required(ErrorMessage = "El campo 'plano.alto' es obligatorio.")]
+    [property: Range(0.5, 1000, ErrorMessage = "El campo 'plano.alto' debe estar entre 0.5 y 1000 metros.")]
+    double? Alto);
 
 public record ZonaResponse(
     int Id,
     string Nombre,
     TipoZona Tipo,
     bool Activa,
-    int NodosActivos);
+    int NodosActivos,
+    RectanguloPlano? Plano);
+
+/// <summary>Plano de la escuela: tamaño total (en metros) y las zonas activas que tienen rectángulo.</summary>
+public record PlanoResponse(
+    double Ancho,
+    double Alto,
+    List<ZonaEnPlano> Zonas);
+
+public record ZonaEnPlano(
+    int Id,
+    string Nombre,
+    TipoZona Tipo,
+    double X,
+    double Y,
+    double Ancho,
+    double Alto);
 
 // ---------- Nodos ----------
 

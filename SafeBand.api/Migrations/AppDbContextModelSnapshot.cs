@@ -533,6 +533,18 @@ namespace SafeBand.api.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<double?>("PlanoAlto")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("PlanoAncho")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("PlanoX")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("PlanoY")
+                        .HasColumnType("float");
+
                     b.Property<string>("Tipo")
                         .IsRequired()
                         .HasMaxLength(20)

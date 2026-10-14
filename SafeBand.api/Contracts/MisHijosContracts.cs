@@ -11,6 +11,7 @@ public record MiHijoResponse(
 
 /// <summary>La detección más reciente del hijo.</summary>
 public record UltimaDeteccion(
+    int ZonaId,                      // para resaltar su rectángulo en el plano
     string Zona,
     int Rssi,
     bool Puesta,

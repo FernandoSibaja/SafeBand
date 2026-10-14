@@ -65,6 +65,7 @@ SafeBand.api\
     │   │   ├── app.js             ← arranque: sesión, menú, navegación entre secciones
     │   │   ├── api.js             ← conexión con la API (JSON, cookie, mensajes de error)
     │   │   ├── ui.js              ← ayudantes: crear elementos, fechas, barras de señal, íconos
+    │   │   ├── plano.js           ← dibuja el plano de la escuela en SVG (zonas en metros); lo usan Zonas y Mis hijos
     │   │   └── vistas\            ← una pantalla por archivo
     │   │       ├── login.js       ← inicio de sesión
     │   │       ├── vivo.js        ← "En vivo": última detección + historial
@@ -633,8 +634,8 @@ Configuración física de la escuela. **Por ahora abiertos (sin login).**
 |---|---|---|---|
 | `GET` | `/api/zonas` | Zonas activas con cuántos nodos activos tiene cada una | 200 |
 | `GET` | `/api/zonas/{id}` | Una zona | 200 / 404 |
-| `POST` | `/api/zonas` | Alta: `{ "nombre": "Patio", "tipo": "Patio" }` | 201 / 400 / 409 (nombre repetido) |
-| `PUT` | `/api/zonas/{id}` | Edita nombre o tipo | 204 / 400 / 404 / 409 |
+| `POST` | `/api/zonas` | Alta: `{ "nombre": "Patio", "tipo": "Patio", "plano": { "x": 0, "y": 6, "ancho": 15, "alto": 8 } }` (`plano` opcional) | 201 / 400 / 409 (nombre repetido) |
+| `PUT` | `/api/zonas/{id}` | Edita nombre, tipo o rectángulo en el plano (`"plano": null` lo quita) | 204 / 400 / 404 / 409 |
 | `DELETE` | `/api/zonas/{id}` | Baja lógica, **solo si no tiene nodos activos** | 204 / 404 / 409 |
 | `GET` | `/api/nodos` | Nodos activos con su zona y `ultimoContacto` | 200 |
 | `GET` | `/api/nodos/{id}` | Un nodo | 200 / 404 |
@@ -643,6 +644,14 @@ Configuración física de la escuela. **Por ahora abiertos (sin login).**
 | `DELETE` | `/api/nodos/{id}` | Baja lógica: **la API rechaza sus lecturas** desde ese momento | 204 / 404 |
 
 **Tipos de zona** (enum, se escriben como texto): `Salon`, `Patio`, `Tienda`, `Entrada`, `Perimetro`, `Otra`.
+
+**Plano de la escuela (rectángulos en metros):** cada zona puede tener un rectángulo `plano` = `{ x, y, ancho, alto }` en metros. (0, 0) es la esquina superior izquierda; `x` crece a la derecha y `y` hacia abajo. Validación: `x`, `y` entre 0 y 1000; `ancho`, `alto` entre 0.5 y 1000; los cuatro obligatorios si se manda `plano`. En la BD son las columnas `PlanoX`, `PlanoY`, `PlanoAncho`, `PlanoAlto` de `Zonas` (migración `AgregarPlanoZonas`). Los nodos usarán este mismo sistema cuando se haga la triangulación.
+
+| Método | Ruta | Qué hace | Quién |
+|---|---|---|---|
+| `GET` | `/api/plano` | `{ ancho, alto, zonas: [{ id, nombre, tipo, x, y, ancho, alto }] }`: zonas **activas con rectángulo**. `ancho`/`alto` = hasta dónde llega la zona más lejana | Cualquier usuario con sesión (los padres lo necesitan); sin sesión → 401 |
+
+`GET /api/mis-hijos` ahora incluye `ultima.zonaId` para saber qué rectángulo resaltar.
 
 **JSON de nodo:**
 ```json
@@ -817,7 +826,8 @@ Las zonas se muestran como **grupos**, cada una con la tabla de sus nodos adentr
 |---|---|---|
 | Lista | Cada zona: nombre, tipo y sus nodos (código, descripción, umbral, último dato). Etiquetas "Portátil" y "En línea" (mandó datos hace menos de 2 min) | `GET /api/zonas`, `GET /api/nodos` (en paralelo) |
 | Ver dados de baja | Casilla (zonas con borde punteado, nodos atenuados) | `?incluirInactivas=true` / `?incluirInactivos=true` |
-| Agregar / editar zona | Nombre y tipo (Salón, Patio, Tienda, Entrada, Perímetro, Otra) | `POST` / `PUT /api/zonas` |
+| Plano de la escuela | Tarjeta arriba de la lista con las zonas activas que tienen rectángulo. Tocar una zona abre su formulario. Si ninguna está dibujada, explica cómo hacerlo | Datos de `GET /api/zonas` (campo `plano`) |
+| Agregar / editar zona | Nombre y tipo (Salón, Patio, Tienda, Entrada, Perímetro, Otra). Sección "Ubicación en el plano": casilla "Dibujar esta zona en el plano" + X, Y, ancho y alto en metros, con **vista previa en vivo** (las demás zonas en gris, esta en azul, cuadrícula de 1 m) y aviso si se encima con otra zona (no bloquea) | `POST` / `PUT /api/zonas` (con `plano` o `null`) |
 | Agregar / editar nodo | Código (= el del firmware), zona, descripción, umbral (dBm) y si es portátil. "Agregar nodo aquí" en una zona la deja preseleccionada | `POST` / `PUT /api/nodos` |
 | Dar de baja / reactivar | Con confirmación. Una zona con nodos activos no se puede dar de baja (409, se muestra el mensaje). Un nodo no se reactiva si su zona está dada de baja | `DELETE`, `POST .../reactivar` |
 
@@ -1112,6 +1122,14 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 - [ ] Desplegar en Azure (App Service + Azure SQL)
 - [ ] **Pedido del profesor:** prueba de alcance BLE (modo calibración en el nodo; 1-20 m, con pared y con cuerpo) → obtener `RSSI_a_1m` y `n`
 - [ ] **Pedido del profesor:** triangulación → X/Y en `Nodos`, cálculo de posición en la API, `GET /api/ubicaciones`, página de mapa con marcadores
+  - [ ] Paso 1: plano por zonas
+    - [x] Parte 1: rectángulo en `Zona` (`PlanoX/Y/Ancho/Alto`) + migración `AgregarPlanoZonas`
+    - [x] Parte 2: API guarda y valida `plano`, `GET /api/plano`, `zonaId` en `mis-hijos`
+    - [x] Parte 3: campos del rectángulo y vista previa en la pantalla Zonas
+    - [ ] Parte 4: plano con la zona resaltada en "Mis hijos"
+  - [ ] Paso 2: prueba de alcance → `RSSI_1m` y `n`
+  - [ ] Paso 3: X/Y de los nodos y cálculo de posición en la API
+  - [ ] Paso 4: punto con círculo de incertidumbre en el plano
 - [ ] Prototipo alfa: eventos + latido, guardar y reenviar sin WiFi, nodos puente con ESP-NOW
 - [ ] **Historial correcto al reasignar pulseras:** guardar `AlumnoId` en cada `LecturaBle` al recibirla
   - [x] Modelo, `AppDbContext` y endpoints de lecturas
@@ -1140,7 +1158,7 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
     - [x] "Crear mi cuenta" en la pantalla de inicio de sesión
     - [x] Vista "Mis hijos" para el padre (celular)
     - [ ] Probar el flujo completo: invitar → registrarse → ver "Mis hijos"
-  - [ ] 6. Clave (API key) por nodo para que nadie mande lecturas falsas
+  - [ ] 6. Clave (API key) por nodo para que nadie mande lecturas falsas — **pospuesto** (2026-10-07, decisión de Fernando). Diseño acordado: clave por nodo generada en "Zonas y nodos" (se muestra una vez, se guarda hasheada), en `menuconfig` del firmware, enviada en un encabezado HTTP; la API rechaza lecturas sin clave válida (401). En red local viaja sin cifrar (HTTP); en Azure va por HTTPS
 - [ ] Después: alumnos, tutores, grupos, alertas, tienda, recogida, PWA
 
 ---
@@ -1187,3 +1205,5 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-03 | Pantalla "Pulseras": inventario con filtro Todas/Asignadas/Libres, etiqueta "Revisar" (asignada sin señal > 24 h), formulario con alumno y confirmación al quitarle la pulsera a un niño, baja y reactivar. API: `alumnoId` en `GuardarPulseraRequest`, baja libera la pulsera, `POST /api/pulseras/{id}/reactivar`. Todas las secciones de administración terminadas. |
 | 2026-10-07 | Registro de padres, parte A (API): `Invitacion` (código hasheado, 7 días, un uso), `POST /api/tutores/{id}/invitacion`, `POST /api/auth/registro` (correo del tutor + código + aviso de privacidad → cuenta Padre ligada al tutor), `GET /api/mis-hijos` con última detección y recorrido. `GET /api/lecturas` cerrado (solo Administrador/Maestro). Límite de intentos en login/registro. Mensajes de contraseña en español. Borrada `monitor.html`. |
 | 2026-10-07 | Registro de padres, parte B (pantallas): columna y sección "Cuenta" en Tutores con hoja de invitación imprimible; "Crear mi cuenta" en la entrada con aviso de privacidad (borrador); vista "Mis hijos" para el padre. "En vivo" solo para personal. Migración `AgregarInvitaciones` creada. |
+| 2026-10-14 | Plano por zonas, partes 1 y 2 (API): rectángulo en metros por zona (`PlanoX`, `PlanoY`, `PlanoAncho`, `PlanoAlto`, migración `AgregarPlanoZonas`), campo `plano` en alta/edición de zonas con validación, nuevo `GET /api/plano` (cualquier usuario con sesión) y `zonaId` en la última detección de `mis-hijos`. Probado: guardar, 3 casos inválidos (400), quitar con `null`, plano sin sesión (401). |
+| 2026-10-14 | Plano por zonas, parte 3 (pantalla Zonas): nuevo `js/plano.js` (dibuja el plano en SVG, escalado a la pantalla), tarjeta "Plano de la escuela" en Zonas y nodos (tocar una zona la edita), sección "Ubicación en el plano" en el formulario de zona con vista previa en vivo y aviso de zonas encimadas. Probado en el navegador: guardar, aviso de encimado, error de ancho 0 junto al campo, vista en celular (375 px sin desplazamiento horizontal). Las zonas se dejaron sin dibujar. `.ayuda-campo` ahora aplica también fuera de un campo. |
