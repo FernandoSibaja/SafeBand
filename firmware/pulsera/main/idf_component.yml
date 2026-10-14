@@ -1,0 +1,4 @@
+# Componentes externos (los descarga ESP-IDF del registro oficial de Espressif al compilar)
+dependencies:
+  idf: ">=5.0"
+  espressif/led_strip: "^3.0.0"   # controlador del LED WS2812 (usa el periférico RMT)

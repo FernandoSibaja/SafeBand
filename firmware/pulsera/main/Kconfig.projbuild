@@ -7,4 +7,32 @@ menu "SafeBand - Pulsera"
             Nombre que la pulsera anuncia por BLE. Debe existir en la tabla Pulseras
             (campo IdentificadorBle) para que la API acepte sus lecturas.
 
+    config SAFEBAND_REED_NIVEL_PUESTA
+        int "Nivel de GPIO4 cuando la pulsera está PUESTA (0 o 1)"
+        range 0 1
+        default 0
+        help
+            El KY-025 (o un jumper) va en GPIO4, que tiene pull-up interno.
+            0 = la pulsera está puesta cuando GPIO4 está en GND (jumper a GND, o un KY-025
+                que baja su salida al detectar el imán).
+            1 = la pulsera está puesta cuando GPIO4 está en alto.
+            Si al acercar el imán el estado sale al revés, cambia este valor.
+
+    config SAFEBAND_MEDIR_BATERIA
+        bool "Medir la batería (requiere el divisor de 2 x 100 kOhm en GPIO3)"
+        default n
+        help
+            Lee el voltaje de la LiPo con el ADC en GPIO3 a través de un divisor de voltaje
+            (VBAT -- 100k -- GPIO3 -- 100k -- GND). Déjalo apagado mientras el divisor no esté
+            conectado: un pin al aire da lecturas al azar y marcaría batería baja sin razón.
+
+    config SAFEBAND_BATERIA_BAJA_MV
+        int "Umbral de batería baja (mV)"
+        depends on SAFEBAND_MEDIR_BATERIA
+        range 3000 4000
+        default 3300
+        help
+            Por debajo de este voltaje se activa el bit de batería baja. Se desactiva
+            cuando la batería sube 100 mV por encima (para que no parpadee en el límite).
+
 endmenu

@@ -1,4 +1,9 @@
+# Placa: Seeed XIAO ESP32-C3
+CONFIG_IDF_TARGET="esp32c3"
+
 # Bluetooth con el stack NimBLE (más ligero que Bluedroid), solo BLE
 CONFIG_BT_ENABLED=y
 CONFIG_BT_NIMBLE_ENABLED=y
-CONFIG_BTDM_CTRL_MODE_BLE_ONLY=y
+
+# El XIAO no tiene chip USB-serie: los mensajes salen por el USB nativo del C3
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y

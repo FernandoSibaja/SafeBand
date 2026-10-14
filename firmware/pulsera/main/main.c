@@ -1,14 +1,18 @@
 /*
- * SafeBand · Pulsera simulada (ESP32 clásico)
+ * SafeBand · Pulsera (Seeed XIAO ESP32-C3)
  *
  * Anuncia por BLE su identificador (ej. "SB-0001") y su estado dentro del
  * "manufacturer data" del anuncio. Los nodos escanean este anuncio.
  *
- * Simulación con la placa:
- *   - Botón BOOT (GPIO 0) presionado 2 s  -> SOS activo por 30 s
- *   - Jumper GPIO 25 a GND                -> pulsera PUESTA (sin jumper = quitada)
- *   - Jumper GPIO 26 a GND                -> BATERÍA BAJA simulada
- *   - LED integrado (GPIO 2): fijo = SOS, parpadeo = quitada, apagado = normal
+ * Pines (ver el documento de arquitectura):
+ *   - GPIO5 (D3)  botón SOS a GND. También sirve el botón BOOT del XIAO (GPIO9).
+ *                 Mantener 2 s -> SOS activo por 30 s.
+ *   - GPIO4 (D2)  reed switch KY-025 (o jumper a GND) -> pulsera PUESTA.
+ *                 El nivel que significa "puesta" se elige en menuconfig.
+ *   - GPIO3 (D1)  ADC: VBAT / 2 por divisor de 2 x 100 kOhm (opcional, menuconfig).
+ *   - GPIO7 (D5)  LED WS2812: azul = SOS, rojo parpadeando = quitada,
+ *                 naranja parpadeando lento = batería baja, apagado = normal.
+ *   - GPIO6 (D4)  motor de vibración por transistor 2N2222: vibra al activar el SOS.
  *
  * Formato del manufacturer data (4 bytes):
  *   [0-1] 0xFFFF  ID de compañía reservado para pruebas
@@ -21,8 +25,12 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "driver/gpio.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "led_strip.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
 #include "host/ble_hs.h"
@@ -30,16 +38,20 @@
 
 static const char *TAG = "pulsera";
 
-// ---------- Pines ----------
-#define PIN_BOTON_SOS   GPIO_NUM_0    // botón BOOT de la placa
-#define PIN_PUESTA      GPIO_NUM_25   // jumper a GND = puesta (simula el reed switch)
-#define PIN_BATERIA     GPIO_NUM_26   // jumper a GND = batería baja (simulada)
-#define PIN_LED         GPIO_NUM_2    // LED azul integrado
+// ---------- Pines (XIAO ESP32-C3) ----------
+#define PIN_BOTON_SOS   GPIO_NUM_5    // D3: botón SOS a GND
+#define PIN_BOTON_BOOT  GPIO_NUM_9    // botón BOOT del XIAO (para probar sin botón externo)
+#define PIN_REED        GPIO_NUM_4    // D2: salida del KY-025 (o jumper)
+#define PIN_BATERIA     GPIO_NUM_3    // D1: ADC, VBAT / 2
+#define PIN_MOTOR       GPIO_NUM_6    // D4: base del 2N2222 (por 1 kOhm)
+#define PIN_LED         GPIO_NUM_7    // D5: datos del WS2812
 
 // ---------- Tiempos ----------
 #define TICK_MS              50
 #define SOS_PULSACION_MS     2000     // cuánto hay que mantener el botón
 #define SOS_DURACION_MS      30000    // cuánto dura el SOS activo
+#define VIBRACION_SOS_MS     600      // pulso del motor al activar el SOS
+#define BATERIA_CADA_MS      5000     // cada cuánto se mide la batería
 
 // Intervalo de anuncio en unidades de 0.625 ms
 #define INTERVALO_NORMAL     800      // 500 ms
@@ -50,9 +62,14 @@ static const char *TAG = "pulsera";
 #define BIT_SOS          (1 << 1)
 #define BIT_BATERIA_BAJA (1 << 2)
 
+// Brillo del LED (0-255): bajo, porque va pegado a la muñeca y gasta batería
+#define BRILLO 24
+
 static uint8_t tipo_direccion;
 static volatile bool ble_listo = false;
 static uint8_t estado_anunciado = 0xFF;   // 0xFF = todavía no se anuncia nada
+
+static led_strip_handle_t led;
 
 // ============================================================
 // BLE: construir y (re)iniciar el anuncio
@@ -124,22 +141,92 @@ static void tarea_ble(void *param)
 }
 
 // ============================================================
-// Entradas (botón y jumpers) y LED
+// Batería: ADC en GPIO3 a través del divisor (VBAT / 2)
+// ============================================================
+#if CONFIG_SAFEBAND_MEDIR_BATERIA
+static adc_oneshot_unit_handle_t adc;
+static adc_cali_handle_t calibracion;
+static adc_channel_t canal_bateria;
+
+static void configurar_bateria(void)
+{
+    adc_unit_t unidad;
+    ESP_ERROR_CHECK(adc_oneshot_io_to_channel(PIN_BATERIA, &unidad, &canal_bateria));
+
+    adc_oneshot_unit_init_cfg_t cfg_unidad = { .unit_id = unidad };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&cfg_unidad, &adc));
+
+    // Atenuación de 12 dB: mide hasta ~2.5 V; con el divisor, VBAT de hasta ~5 V
+    adc_oneshot_chan_cfg_t cfg_canal = { .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT };
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc, canal_bateria, &cfg_canal));
+
+    // Calibración de fábrica del chip: convierte la lectura cruda a milivolts
+    adc_cali_curve_fitting_config_t cfg_cali = {
+        .unit_id = unidad, .chan = canal_bateria, .atten = ADC_ATTEN_DB_12, .bitwidth = ADC_BITWIDTH_DEFAULT,
+    };
+    ESP_ERROR_CHECK(adc_cali_create_scheme_curve_fitting(&cfg_cali, &calibracion));
+}
+
+// Voltaje de la batería en mV (promedio de 8 lecturas), o -1 si falla
+static int leer_bateria_mv(void)
+{
+    int suma = 0;
+    for (int i = 0; i < 8; i++) {
+        int crudo, mv;
+        if (adc_oneshot_read(adc, canal_bateria, &crudo) != ESP_OK) return -1;
+        if (adc_cali_raw_to_voltage(calibracion, crudo, &mv) != ESP_OK) return -1;
+        suma += mv;
+    }
+    return (suma / 8) * 2;   // x2 por el divisor de dos resistencias iguales
+}
+#endif
+
+// ============================================================
+// Entradas, LED y motor
 // ============================================================
 static void configurar_pines(void)
 {
     gpio_config_t entradas = {
-        .pin_bit_mask = (1ULL << PIN_BOTON_SOS) | (1ULL << PIN_PUESTA) | (1ULL << PIN_BATERIA),
+        .pin_bit_mask = (1ULL << PIN_BOTON_SOS) | (1ULL << PIN_BOTON_BOOT) | (1ULL << PIN_REED),
         .mode = GPIO_MODE_INPUT,
-        .pull_up_en = GPIO_PULLUP_ENABLE,   // sin conectar = 1; con jumper a GND = 0
+        .pull_up_en = GPIO_PULLUP_ENABLE,   // sin conectar = 1; a GND = 0
     };
     gpio_config(&entradas);
 
-    gpio_config_t salida = {
-        .pin_bit_mask = 1ULL << PIN_LED,
+    gpio_config_t motor = {
+        .pin_bit_mask = 1ULL << PIN_MOTOR,
         .mode = GPIO_MODE_OUTPUT,
     };
-    gpio_config(&salida);
+    gpio_config(&motor);
+    gpio_set_level(PIN_MOTOR, 0);
+
+    // WS2812: un solo LED controlado por el periférico RMT
+    led_strip_config_t cfg_led = {
+        .strip_gpio_num = PIN_LED,
+        .max_leds = 1,
+        .led_model = LED_MODEL_WS2812,
+    };
+    led_strip_rmt_config_t cfg_rmt = {
+        .clk_src = RMT_CLK_SRC_DEFAULT,
+        .resolution_hz = 10 * 1000 * 1000,   // 10 MHz
+    };
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&cfg_led, &cfg_rmt, &led));
+    led_strip_clear(led);
+}
+
+// Pone el color del LED solo si cambió (r, g, b ya con brillo aplicado)
+static void color_led(uint8_t r, uint8_t g, uint8_t b)
+{
+    static uint32_t anterior = 0xFFFFFFFF;
+    uint32_t actual = ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+    if (actual == anterior) return;
+    anterior = actual;
+    if (actual == 0) {
+        led_strip_clear(led);
+    } else {
+        led_strip_set_pixel(led, 0, r, g, b);
+        led_strip_refresh(led);
+    }
 }
 
 // Bucle principal: lee entradas, calcula el estado y actualiza el anuncio si cambió
@@ -147,14 +234,18 @@ static void bucle_principal(void)
 {
     uint32_t ms_presionado = 0;
     uint32_t ms_sos_restante = 0;
+    uint32_t ms_vibracion = 0;
     uint32_t contador = 0;
+    bool bateria_baja = false;
 
     while (true) {
-        // --- Botón SOS: hay que mantenerlo presionado (evita falsos positivos) ---
-        if (gpio_get_level(PIN_BOTON_SOS) == 0) {
+        // --- Botón SOS (externo o BOOT): hay que mantenerlo 2 s (evita falsos positivos) ---
+        bool presionado = gpio_get_level(PIN_BOTON_SOS) == 0 || gpio_get_level(PIN_BOTON_BOOT) == 0;
+        if (presionado) {
             ms_presionado += TICK_MS;
             if (ms_presionado == SOS_PULSACION_MS) {
                 ms_sos_restante = SOS_DURACION_MS;
+                ms_vibracion = VIBRACION_SOS_MS;
                 ESP_LOGW(TAG, "¡SOS activado!");
             }
         } else {
@@ -162,23 +253,41 @@ static void bucle_principal(void)
         }
         if (ms_sos_restante > 0) ms_sos_restante -= TICK_MS;
 
+        // --- Motor: pulso corto para confirmar el SOS ---
+        gpio_set_level(PIN_MOTOR, ms_vibracion > 0);
+        if (ms_vibracion > 0) ms_vibracion -= TICK_MS;
+
+        // --- Batería (cada 5 s), con 100 mV de histéresis para no parpadear en el límite ---
+#if CONFIG_SAFEBAND_MEDIR_BATERIA
+        if (contador % (BATERIA_CADA_MS / TICK_MS) == 0) {
+            int mv = leer_bateria_mv();
+            if (mv > 0) {
+                if (!bateria_baja && mv < CONFIG_SAFEBAND_BATERIA_BAJA_MV) bateria_baja = true;
+                else if (bateria_baja && mv > CONFIG_SAFEBAND_BATERIA_BAJA_MV + 100) bateria_baja = false;
+                ESP_LOGI(TAG, "Batería: %d mV%s", mv, bateria_baja ? " (BAJA)" : "");
+            }
+        }
+#endif
+
         // --- Armar el byte de estado ---
         uint8_t estado = 0;
-        if (gpio_get_level(PIN_PUESTA) == 0)  estado |= BIT_PUESTA;
-        if (ms_sos_restante > 0)              estado |= BIT_SOS;
-        if (gpio_get_level(PIN_BATERIA) == 0) estado |= BIT_BATERIA_BAJA;
+        if (gpio_get_level(PIN_REED) == CONFIG_SAFEBAND_REED_NIVEL_PUESTA) estado |= BIT_PUESTA;
+        if (ms_sos_restante > 0) estado |= BIT_SOS;
+        if (bateria_baja)        estado |= BIT_BATERIA_BAJA;
 
         // --- Solo se reinicia el anuncio si algo cambió ---
         if (ble_listo && estado != estado_anunciado) {
             anunciar(estado);
         }
 
-        // --- LED: fijo = SOS, parpadeo = quitada, apagado = normal ---
+        // --- LED: prioridad SOS > quitada > batería baja > apagado ---
         contador++;
-        int led = 0;
-        if (estado & BIT_SOS) led = 1;
-        else if (!(estado & BIT_PUESTA)) led = (contador / 10) % 2;   // cambia cada 500 ms
-        gpio_set_level(PIN_LED, led);
+        bool parpadeo = (contador / 10) % 2;    // cambia cada 500 ms
+        bool parpadeo_lento = (contador / 20) % 2;   // cambia cada 1 s
+        if (estado & BIT_SOS)                 color_led(0, 0, BRILLO);                        // azul fijo
+        else if (!(estado & BIT_PUESTA))      color_led(parpadeo ? BRILLO : 0, 0, 0);         // rojo parpadeando
+        else if (estado & BIT_BATERIA_BAJA)   color_led(parpadeo_lento ? BRILLO : 0, parpadeo_lento ? BRILLO / 3 : 0, 0); // naranja
+        else                                  color_led(0, 0, 0);                             // apagado
 
         vTaskDelay(pdMS_TO_TICKS(TICK_MS));
     }
@@ -196,6 +305,9 @@ void app_main(void)
     ESP_ERROR_CHECK(err);
 
     configurar_pines();
+#if CONFIG_SAFEBAND_MEDIR_BATERIA
+    configurar_bateria();
+#endif
 
     // Iniciar NimBLE
     ESP_ERROR_CHECK(nimble_port_init());
@@ -203,6 +315,6 @@ void app_main(void)
     ble_hs_cfg.reset_cb = al_reiniciar;
     nimble_port_freertos_init(tarea_ble);
 
-    ESP_LOGI(TAG, "Pulsera %s iniciada", CONFIG_SAFEBAND_PULSERA_ID);
+    ESP_LOGI(TAG, "Pulsera %s iniciada (XIAO ESP32-C3)", CONFIG_SAFEBAND_PULSERA_ID);
     bucle_principal();
 }

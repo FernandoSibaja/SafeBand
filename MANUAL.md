@@ -48,7 +48,7 @@ SafeBand.api\
 ├── MANUAL.md                      ← este manual
 ├── firmware\                      ← código de los ESP32 (VS Code + ESP-IDF v6.0.2)
 │   ├── .gitignore                 ← no sube build\ ni sdkconfig
-│   ├── pulsera\                   ← pulsera simulada con un ESP32 clásico
+│   ├── pulsera\                   ← pulsera en la XIAO ESP32-C3
 │   └── nodo\                      ← nodo receptor (un mismo programa para nodo-1, nodo-2...)
 └── SafeBand.api\                  ← el proyecto
     ├── Program.cs                 ← punto de arranque de la API
@@ -905,35 +905,43 @@ Ventajas: la página y la API están en la misma dirección (no hace falta confi
 ## 6c. Firmware (ESP32)
 
 **Herramientas:** VS Code + extensión ESP-IDF, **ESP-IDF v6.0.2** (instalado en `C:\esp\v6.0.2\esp-idf`).
-**Placas:** 3 × ESP32 clásico ("ESP32 WiFi+BT SoC Inside"). LED integrado en GPIO 2, botón BOOT en GPIO 0.
+**Placas:** pulsera = **Seeed XIAO ESP32-C3** (target `esp32c3`, USB nativo); nodos = ESP32 clásico (target `esp32`, LED integrado en GPIO 2, botón BOOT en GPIO 0).
 
 ### Plan de hardware de prueba
 | Placa | Firmware | Papel |
 |---|---|---|
-| ESP32 #1 | `firmware\pulsera` | Simula la pulsera `SB-0001` |
+| XIAO ESP32-C3 | `firmware\pulsera` | Pulsera `SB-0001` (antes se simulaba con un ESP32 clásico) |
 | ESP32 #2 | `firmware\nodo` | `nodo-1` en "Salón 3°A" |
 | ESP32 #3 | `firmware\nodo` (mismo programa) | `nodo-2` en "Patio" (hay que darlo de alta en la BD) |
 
 **Un programa por *tipo* de dispositivo, no por dispositivo:** todos los nodos usan `firmware\nodo`; solo cambia el código del nodo al grabar (`menuconfig`). Lo mismo aplicará a las terminales de tienda y de recogida cuando lleguen.
 
-### `firmware\pulsera` — pulsera simulada
+### `firmware\pulsera` — pulsera (XIAO ESP32-C3)
 Anuncia por BLE su nombre (`SB-0001`) y su estado. No se conecta a WiFi.
+
+> **Al cambiar de placa:** en VS Code elige el target **`esp32c3`** (clic en el chip de la barra de abajo, o "ESP-IDF: Set Espressif Device Target"). Esto borra `build\` y regenera `sdkconfig` a partir de `sdkconfig.defaults`. Si grabas con el target equivocado, el flasheo falla (*"This chip is ESP32-C3, not ESP32"*).
 
 | Archivo | Qué es |
 |---|---|
 | `CMakeLists.txt` | Define el proyecto ESP-IDF |
-| `sdkconfig.defaults` | Activa Bluetooth con NimBLE, solo BLE |
+| `sdkconfig.defaults` | Target `esp32c3`, Bluetooth con NimBLE y consola por el **USB nativo** (sin esto el monitor no muestra nada) |
 | `main\main.c` | El programa |
-| `main\CMakeLists.txt` | Archivos y componentes que usa (`bt`, `nvs_flash`, `esp_driver_gpio`) |
-| `main\Kconfig.projbuild` | Opción configurable: **identificador de la pulsera** (default `SB-0001`). Se cambia en `idf.py menuconfig` → *SafeBand - Pulsera* |
+| `main\CMakeLists.txt` | Archivos y componentes que usa (`bt`, `nvs_flash`, `esp_driver_gpio`, `esp_adc`) |
+| `main\idf_component.yml` | Componente externo **`espressif/led_strip`** (controla el WS2812). ESP-IDF lo descarga solo al compilar en `managed_components\` (no se sube a Git); `dependencies.lock` fija la versión |
+| `main\Kconfig.projbuild` | Opciones en `idf.py menuconfig` → *SafeBand - Pulsera*: **identificador** (default `SB-0001`), **nivel de GPIO4 que significa "puesta"** (default 0), **medir batería** (default apagado) y **umbral de batería baja** (default 3300 mV) |
 
-**Conexiones para simular (sin hardware extra):**
-| Función real | Simulación | Pin |
-|---|---|---|
-| Botón SOS | Botón **BOOT** presionado **2 s** → SOS activo **30 s** | GPIO 0 |
-| Reed switch (puesta) | **Jumper a GND** = puesta; sin jumper = quitada | GPIO 25 |
-| Batería baja | **Jumper a GND** = batería baja | GPIO 26 |
-| LED de estado | Fijo = SOS · parpadeo = quitada · apagado = normal | GPIO 2 |
+**Conexiones (XIAO ESP32-C3, lógica 3.3 V):**
+| Función | Conexión | Pin | Sin el módulo, para probar |
+|---|---|---|---|
+| Botón SOS | Botón 6×6 entre el pin y GND. Mantener **2 s** → SOS activo **30 s** (anuncio cada 100 ms y vibración de 0.6 s) | **GPIO5 (D3)**; también el botón **BOOT** del XIAO (GPIO9) | Mantener BOOT 2 s |
+| Reed switch (puesta) | Salida del **KY-025** (VCC 3.3 V). Pull-up interno | **GPIO4 (D2)** | Jumper de GPIO4 a GND = puesta |
+| Batería | Divisor **VBAT — 100 kΩ — GPIO3 — 100 kΩ — GND**. Se mide cada 5 s; batería baja < 3300 mV (se quita al pasar de 3400 mV) | **GPIO3 (D1)**, ADC | Dejar *Medir batería* apagado |
+| LED WS2812 | DIN del módulo; VCC 3.3 V | **GPIO7 (D5)** | — |
+| Motor de vibración | Base del 2N2222 por 1 kΩ; motor a VBAT con diodo 1N4148 | **GPIO6 (D4)** | No pasa nada si no está |
+
+**Colores del LED (prioridad de arriba a abajo):** azul fijo = SOS · rojo parpadeando = quitada · naranja parpadeando lento = batería baja · apagado = normal. Brillo bajo (24/255) para cuidar la batería.
+
+**Si el estado "puesta" sale al revés con el KY-025** (puesta al quitar el imán): cambia en `menuconfig` el *nivel de GPIO4 cuando está puesta* a 1.
 
 **Qué anuncia (máx. 31 bytes por anuncio BLE):**
 - **Nombre:** `SB-0001` → así el nodo sabe qué pulsera es.
@@ -945,7 +953,7 @@ Anuncia por BLE su nombre (`SB-0001`) y su estado. No se conecta a WiFi.
 
 **Intervalo de anuncio:** 500 ms normal; **100 ms durante SOS** (para que el nodo lo capte más rápido). El anuncio solo se reinicia cuando cambia el estado.
 
-**Por qué NimBLE y no Bluedroid:** NimBLE es el stack BLE ligero de ESP-IDF; usa menos memoria y es el mismo que usará la XIAO ESP32-C3.
+**Por qué NimBLE y no Bluedroid:** NimBLE es el stack BLE ligero de ESP-IDF; usa menos memoria.
 
 ### Compilar y grabar (terminal de ESP-IDF en VS Code, dentro de `firmware\pulsera`)
 ```
@@ -1209,3 +1217,4 @@ git remote set-url origin https://FernandoSibaja@github.com/FernandoSibaja/SafeB
 | 2026-10-14 | Plano por zonas, partes 1 y 2 (API): rectángulo en metros por zona (`PlanoX`, `PlanoY`, `PlanoAncho`, `PlanoAlto`, migración `AgregarPlanoZonas`), campo `plano` en alta/edición de zonas con validación, nuevo `GET /api/plano` (cualquier usuario con sesión) y `zonaId` en la última detección de `mis-hijos`. Probado: guardar, 3 casos inválidos (400), quitar con `null`, plano sin sesión (401). |
 | 2026-10-14 | Plano por zonas, parte 3 (pantalla Zonas): nuevo `js/plano.js` (dibuja el plano en SVG, escalado a la pantalla), tarjeta "Plano de la escuela" en Zonas y nodos (tocar una zona la edita), sección "Ubicación en el plano" en el formulario de zona con vista previa en vivo y aviso de zonas encimadas. Probado en el navegador: guardar, aviso de encimado, error de ancho 0 junto al campo, vista en celular (375 px sin desplazamiento horizontal). Las zonas se dejaron sin dibujar. `.ayuda-campo` ahora aplica también fuera de un campo. |
 | 2026-10-14 | Plano por zonas, parte 4 (Mis hijos): cada tarjeta muestra el plano con la zona de la última detección resaltada y un círculo con la inicial (azul = reciente, gris punteado = más de 30 min, rojo = SOS); nota si la zona no está dibujada; sin plano si la escuela no ha dibujado zonas. `plano.js`: opciones `estilo` y `marcador`. Probado con datos simulados (4 hijos, uno por caso) en escritorio y celular. **Paso 1 terminado.** |
+| 2026-10-14 | Firmware de la pulsera adaptado a la **XIAO ESP32-C3**: target `esp32c3`, consola por USB nativo, pines de la arquitectura (SOS GPIO5 + BOOT GPIO9, reed GPIO4, batería GPIO3 por ADC con calibración, motor GPIO6, WS2812 GPIO7 con `espressif/led_strip`), opciones nuevas en menuconfig (nivel del reed, medir batería, umbral). Mismo formato de anuncio BLE. Compila sin advertencias (probado con medición de batería activada). Falta grabarla y probarla. |
