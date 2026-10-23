@@ -18,7 +18,12 @@ public record UltimaDeteccion(
     bool Sos,
     bool BateriaBaja,
     DateTime Timestamp,
-    bool SenalDebil);                // la señal más fuerte está bajo el umbral de su nodo: "cerca de" la zona
+    bool SenalDebil,                 // no se sabe bien: mostrar "Cerca de" la zona
+    string Metodo,                   // "Nodo", "Triangulacion" o "Cercania": cómo se decidió la zona
+    PosicionEstimada? Posicion);     // triangulación (null si ningún nodo que la oyó tiene posición en el plano)
+
+/// <summary>Posición estimada de la pulsera en el plano, en metros: x, y, radio de incertidumbre y nodos usados.</summary>
+public record PosicionEstimada(double X, double Y, double Radio, int Nodos);
 
 /// <summary>Un tramo del recorrido: estuvo en esta zona de tal hora a tal hora.</summary>
 public record TramoRecorrido(string Zona, DateTime Desde, DateTime Hasta);

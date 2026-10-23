@@ -141,7 +141,12 @@ using (var scope = app.Services.CreateScope())
 
 // Frontend: sirve los archivos de wwwroot/ (index.html en "/")
 app.UseDefaultFiles();
-app.UseStaticFiles();
+// no-cache: el navegador guarda los archivos pero pregunta cada vez si cambiaron (con ETag, responde 304 si no).
+// Sin esto, después de publicar seguía usando los JS viejos hasta un Ctrl+F5.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx => ctx.Context.Response.Headers.CacheControl = "no-cache",
+});
 
 // Sesión: primero "¿quién eres?" (cookie) y luego "¿qué puedes hacer?" (roles)
 app.UseAuthentication();

@@ -9,7 +9,8 @@
 - [x] 2. Prueba de alcance: RSSI a varias distancias → `RSSI_1m` y `n` (pedido del profesor) — libre: RSSI_1m −76.1 dBm, n 1.83
 - [x] 3. Resaltar la zona del nodo con la señal más fuerte (que no salte entre zonas) — probado con 3 nodos en la nube
 - [ ] 4. Posición X, Y de los nodos + cálculo de triangulación en la API
-- [ ] 5. Punto con círculo de incertidumbre en el plano de "Mis hijos"
+- [ ] 4b. Ubicación híbrida: cada zona elige **por nodo** (salones, presencia) o **por triangulación** (pasillos, patios, entradas); zona según el punto; cuartos chicos sin nodo → "Cerca de…". Agrupar cubículos chicos en el plano
+- [x] 5. Punto con círculo de incertidumbre en el plano de "Mis hijos"
 - [ ] 5b. **Modo búsqueda** (RF-23): punto triangulado en vivo cada 1–2 s. Lo activan administradores, maestros y padres (su hijo) desde la página, y se activa solo con un SOS. Dura hasta que alguien lo desactive
 - [ ] 5c. (Opcional) Durante la búsqueda, la pulsera anuncia cada 100 ms (requiere canal BLE nodo → pulsera)
 

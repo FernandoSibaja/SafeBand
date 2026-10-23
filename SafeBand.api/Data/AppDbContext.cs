@@ -40,6 +40,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         {
             e.Property(z => z.Nombre).HasMaxLength(100);
             e.Property(z => z.Tipo).HasConversion<string>().HasMaxLength(20); // guarda "Salon" en vez de 0
+            e.Property(z => z.Ubicacion).HasConversion<string>().HasMaxLength(20); // "PorNodo", "Triangulacion" o NULL (automático)
             e.HasIndex(z => z.Nombre).IsUnique();
         });
 

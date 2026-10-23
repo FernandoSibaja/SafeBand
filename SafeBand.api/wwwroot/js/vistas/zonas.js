@@ -22,6 +22,10 @@ const TIPOS = [
 ];
 const textoTipo = (valor) => TIPOS.find(([v]) => v === valor)?.[1] ?? valor;
 
+// Cómo se ubica a un niño en la zona (igual que Zona.PorDefecto en la API)
+const UBICACIONES = { PorNodo: "Por nodo", Triangulacion: "Por triangulación" };
+const ubicacionPorTipo = (tipo) => (tipo === "Salon" || tipo === "Tienda" ? "PorNodo" : "Triangulacion");
+
 const MINUTOS_EN_LINEA = 2;   // un nodo que mandó datos hace menos de esto se considera "en línea"
 
 export function vistaZonas(contenedor) {
@@ -97,7 +101,10 @@ export function vistaZonas(contenedor) {
                 ? el("p", { class: "secundario" },
                     "Ninguna zona está dibujada todavía. Edita una zona y llena «Ubicación en el plano» con sus medidas en metros; así los padres verán dónde está su hijo.")
                 : el("div", { class: "plano-marco" },
-                    dibujarPlano(enPlano, { alClic: (z) => formularioZona(zonas.find((x) => x.id === z.id)) })));
+                    dibujarPlano(enPlano, {
+                        alClic: (z) => formularioZona(zonas.find((x) => x.id === z.id)),
+                        nodos: nodosEnPlano(nodos.filter((n) => n.activo)),
+                    })));
     }
 
     function tarjetaZona(z) {
@@ -106,6 +113,7 @@ export function vistaZonas(contenedor) {
             el("div", { class: "zona-encabezado" },
                 el("h2", {}, z.nombre),
                 el("span", { class: "etiqueta neutra" }, textoTipo(z.tipo)),
+                el("span", { class: "etiqueta neutra", title: "Cómo se ubica a un niño en esta zona" }, UBICACIONES[z.ubicacionEfectiva]),
                 !z.activa && el("span", { class: "etiqueta neutra" }, "Dada de baja"),
                 el("div", { class: "acciones-zona" },
                     z.activa && el("button", {
@@ -157,6 +165,24 @@ export function vistaZonas(contenedor) {
             ancho: true,
             ayuda: "El tipo cambia cómo se usa la zona: en los salones se pasa lista y salir del perímetro genera alerta.",
         });
+
+        // --- Cómo se ubica (vacío = automático según el tipo) ---
+        const selectorUbicacion = el("select", { id: "z-ubicacion" });
+        const ubicacion = campo("z-ubicacion", "Cómo se ubica a un niño aquí", selectorUbicacion, {
+            ancho: true,
+            ayuda: "Por nodo: hay un nodo dentro del cuarto y basta con que sea el que mejor oye la pulsera. "
+                + "Por triangulación: espacio abierto o cuarto chico sin nodo; se calcula el punto con los nodos de alrededor.",
+        });
+        function llenarUbicaciones() {
+            const elegido = selectorUbicacion.value;
+            selectorUbicacion.replaceChildren(
+                el("option", { value: "" }, `Automático (${UBICACIONES[ubicacionPorTipo(selectorTipo.value)].toLowerCase()}, por ser ${textoTipo(selectorTipo.value).toLowerCase()})`),
+                ...Object.entries(UBICACIONES).map(([v, t]) => el("option", { value: v }, t)));
+            selectorUbicacion.value = elegido;
+        }
+        llenarUbicaciones();
+        selectorUbicacion.value = zona?.ubicacion ?? "";
+        selectorTipo.addEventListener("change", llenarUbicaciones);
 
         // --- Ubicación en el plano (rectángulo en metros) ---
         const enPlano = el("input", { type: "checkbox", checked: zona?.plano != null });
@@ -212,7 +238,7 @@ export function vistaZonas(contenedor) {
             subtitulo: "Un área de la escuela: un salón, el patio, la tienda, la entrada...",
             contenido: [
                 avisoForm,
-                el("div", { class: "grupo-campos" }, nombre.nodo, tipo.nodo),
+                el("div", { class: "grupo-campos" }, nombre.nodo, tipo.nodo, ubicacion.nodo),
                 el("h3", { class: "subtitulo-form" }, "Ubicación en el plano"),
                 casillaPlano,
                 seccionPlano,
@@ -228,13 +254,14 @@ export function vistaZonas(contenedor) {
         async function guardar(evento) {
             evento.preventDefault();
             avisoForm.hidden = true;
-            for (const c of [nombre, tipo, ...camposPlano]) c.limpiar();
+            for (const c of [nombre, tipo, ubicacion, ...camposPlano]) c.limpiar();
             await conBoton(botonGuardar, async () => {
                 // Campo vacío → null, para que la API diga cuál falta
                 const num = (c) => c.input.value === "" ? null : Number(c.input.value);
                 const datos = {
                     nombre: nombre.input.value.trim(),
                     tipo: selectorTipo.value,
+                    ubicacion: selectorUbicacion.value || null,
                     plano: enPlano.checked ? { x: num(px), y: num(py), ancho: num(pancho), alto: num(palto) } : null,
                 };
                 try {
@@ -244,7 +271,7 @@ export function vistaZonas(contenedor) {
                     avisoBreve(editando ? "Cambios guardados" : "Zona agregada");
                     cargar();
                 } catch (e) {
-                    repartirErrores(e, { nombre, tipo, "plano.x": px, "plano.y": py, "plano.ancho": pancho, "plano.alto": palto },
+                    repartirErrores(e, { nombre, tipo, ubicacion, "plano.x": px, "plano.y": py, "plano.ancho": pancho, "plano.alto": palto },
                         avisoForm, /zona|nombre/i, nombre);
                 }
             });
@@ -298,6 +325,47 @@ export function vistaZonas(contenedor) {
         const portatil = el("input", { type: "checkbox", checked: nodo?.esPortatil ?? false });
         const casillaPortatil = el("label", { class: "casilla ancho" }, portatil, "Nodo portátil (para salidas escolares, con batería)");
 
+        // --- Ubicación en el plano (punto en metros, la usa la triangulación) ---
+        const zonasDibujadas = zonasEnPlano(zonas.filter((z) => z.activa));
+        const enPlanoN = el("input", { type: "checkbox", checked: nodo?.posicion != null });
+        const casillaPlanoN = el("label", { class: "casilla ancho" }, enPlanoN, "Ubicar este nodo en el plano");
+        const numeroN = (id, valor) => el("input", { id, type: "number", inputmode: "decimal", min: 0, max: 1000, step: 0.1, value: valor ?? "" });
+        const nx = campo("n-x", "X (desde la izquierda)", numeroN("n-x", nodo?.posicion?.x));
+        const ny = campo("n-y", "Y (desde arriba)", numeroN("n-y", nodo?.posicion?.y));
+        const previaN = el("div", { class: "plano-marco plano-previa" });
+        const seccionPlanoN = el("div", { class: "grupo-campos" },
+            el("p", { class: "ayuda-campo ancho" },
+                "Toca el plano donde está colocado el nodo, o escribe X y Y en metros. Con ±1 m de precisión es suficiente."),
+            nx.nodo, ny.nodo,
+            el("div", { class: "ancho" }, previaN));
+
+        function puntoActual() {
+            const x = nx.input.value === "" ? NaN : Number(nx.input.value);
+            const y = ny.input.value === "" ? NaN : Number(ny.input.value);
+            return Number.isNaN(x) || Number.isNaN(y) ? null : { x, y };
+        }
+        function actualizarPreviaN() {
+            seccionPlanoN.hidden = !enPlanoN.checked;
+            if (!enPlanoN.checked) return;
+            if (zonasDibujadas.length === 0) {
+                previaN.replaceChildren(el("p", { class: "secundario" }, "Primero dibuja las zonas en el plano (Editar zona → Ubicación en el plano)."));
+                return;
+            }
+            const punto = puntoActual();
+            const otros = nodosEnPlano(nodos.filter((n) => n.activo && n.id !== nodo?.id));
+            const este = punto ? [{ ...punto, etiqueta: codigo.input.value.trim() || "Este nodo", actual: true }] : [];
+            previaN.replaceChildren(dibujarPlano(zonasDibujadas, {
+                resaltada: Number(selectorZona.value),
+                cuadricula: true,
+                nodos: [...otros, ...este],
+                alClicPunto: (x, y) => { nx.input.value = x; ny.input.value = y; actualizarPreviaN(); },
+                etiqueta: "Plano para ubicar el nodo",
+            }));
+        }
+        enPlanoN.addEventListener("change", actualizarPreviaN);
+        selectorZona.addEventListener("change", actualizarPreviaN);
+        for (const c of [codigo, nx, ny]) c.input.addEventListener("input", actualizarPreviaN);
+
         const avisoForm = el("div", { class: "aviso aviso-error", role: "alert", hidden: true });
         const botonGuardar = el("button", { type: "submit", class: "boton boton-primario" }, editando ? "Guardar cambios" : "Agregar nodo");
         const accionEstado = !editando ? null
@@ -311,6 +379,9 @@ export function vistaZonas(contenedor) {
             contenido: [
                 avisoForm,
                 el("div", { class: "grupo-campos" }, codigo.nodo, zona.nodo, descripcion.nodo, umbral.nodo, casillaPortatil),
+                el("h3", { class: "subtitulo-form" }, "Ubicación en el plano"),
+                casillaPlanoN,
+                seccionPlanoN,
                 editando && el("p", { class: "ayuda-campo" },
                     nodo.ultimoContacto ? `Último dato recibido ${haceCuanto(nodo.ultimoContacto)}.` : "Este nodo todavía no ha mandado datos."),
             ],
@@ -319,12 +390,13 @@ export function vistaZonas(contenedor) {
             alCerrar: () => { cerrarFormulario = null; },
         });
         cerrarFormulario = cerrar;
+        actualizarPreviaN();
         codigo.input.focus();
 
         async function guardar(evento) {
             evento.preventDefault();
             avisoForm.hidden = true;
-            for (const c of [codigo, zona, descripcion, umbral]) c.limpiar();
+            for (const c of [codigo, zona, descripcion, umbral, nx, ny]) c.limpiar();
             await conBoton(botonGuardar, async () => {
                 const datos = {
                     codigo: codigo.input.value.trim(),
@@ -332,6 +404,9 @@ export function vistaZonas(contenedor) {
                     descripcion: descripcion.input.value.trim() || null,
                     umbralRssi: umbral.input.value === "" ? -90 : Number(umbral.input.value),
                     esPortatil: portatil.checked,
+                    posicion: enPlanoN.checked
+                        ? { x: nx.input.value === "" ? null : Number(nx.input.value), y: ny.input.value === "" ? null : Number(ny.input.value) }
+                        : null,
                 };
                 try {
                     if (editando) await api(`/api/nodos/${nodo.id}`, { metodo: "PUT", cuerpo: datos });
@@ -340,7 +415,8 @@ export function vistaZonas(contenedor) {
                     avisoBreve(editando ? "Cambios guardados" : "Nodo agregado");
                     cargar();
                 } catch (e) {
-                    repartirErrores(e, { codigo, zonaid: zona, descripcion, umbralrssi: umbral }, avisoForm, /c[oó]digo/i, codigo);
+                    repartirErrores(e, { codigo, zonaid: zona, descripcion, umbralrssi: umbral, "posicion.x": nx, "posicion.y": ny },
+                        avisoForm, /c[oó]digo/i, codigo);
                 }
             });
         }
@@ -380,6 +456,11 @@ export function vistaZonas(contenedor) {
 }
 
 // ---------- Ayudantes de esta pantalla ----------
+
+// Nodos de la API → puntos para plano.js (solo los que tienen posición)
+function nodosEnPlano(lista) {
+    return lista.filter((n) => n.posicion).map((n) => ({ x: n.posicion.x, y: n.posicion.y, etiqueta: n.codigo }));
+}
 
 // Zonas de la API → rectángulos para plano.js (solo las que tienen plano)
 function zonasEnPlano(lista) {

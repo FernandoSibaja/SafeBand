@@ -19,7 +19,9 @@ public record GuardarZonaRequest(
     [property: Required(ErrorMessage = "El campo 'tipo' es obligatorio (Salon, Patio, Tienda, Entrada, Perimetro u Otra).")]
     TipoZona? Tipo,
 
-    RectanguloPlano? Plano = null);
+    RectanguloPlano? Plano = null,
+
+    ModoUbicacion? Ubicacion = null);   // PorNodo, Triangulacion o null (automático según el tipo)
 
 /// <summary>
 /// Rectángulo de una zona en el plano de la escuela, en metros.
@@ -48,7 +50,9 @@ public record ZonaResponse(
     TipoZona Tipo,
     bool Activa,
     int NodosActivos,
-    RectanguloPlano? Plano);
+    RectanguloPlano? Plano,
+    ModoUbicacion? Ubicacion,           // lo que eligió el administrador (null = automático)
+    ModoUbicacion UbicacionEfectiva);   // el que se usa de verdad
 
 /// <summary>Plano de la escuela: tamaño total (en metros) y las zonas activas que tienen rectángulo.</summary>
 public record PlanoResponse(
@@ -63,7 +67,8 @@ public record ZonaEnPlano(
     double X,
     double Y,
     double Ancho,
-    double Alto);
+    double Alto,
+    ModoUbicacion Ubicacion);
 
 // ---------- Nodos ----------
 

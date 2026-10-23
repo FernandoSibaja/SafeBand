@@ -58,7 +58,7 @@ public static class ZonasNodosEndpoints
         if (await db.Zonas.AnyAsync(z => z.Nombre == nombre))
             return Results.Conflict(new { error = $"Ya existe una zona llamada '{nombre}'." });
 
-        var zona = new Zona { Nombre = nombre, Tipo = req.Tipo!.Value };
+        var zona = new Zona { Nombre = nombre, Tipo = req.Tipo!.Value, Ubicacion = req.Ubicacion };
         AsignarPlano(zona, req.Plano);
         db.Zonas.Add(zona);
         await db.SaveChangesAsync();
@@ -78,6 +78,7 @@ public static class ZonasNodosEndpoints
 
         zona.Nombre = nombre;
         zona.Tipo = req.Tipo!.Value;
+        zona.Ubicacion = req.Ubicacion;
         AsignarPlano(zona, req.Plano);
         await db.SaveChangesAsync();
         return Results.NoContent();
@@ -109,7 +110,8 @@ public static class ZonasNodosEndpoints
 
     private static IQueryable<ZonaResponse> ProyectarZonas(IQueryable<Zona> q) =>
         q.Select(z => new ZonaResponse(z.Id, z.Nombre, z.Tipo, z.Activa, z.Nodos.Count(n => n.Activo),
-            z.PlanoX == null ? null : new RectanguloPlano(z.PlanoX, z.PlanoY, z.PlanoAncho, z.PlanoAlto)));
+            z.PlanoX == null ? null : new RectanguloPlano(z.PlanoX, z.PlanoY, z.PlanoAncho, z.PlanoAlto),
+            z.Ubicacion, z.Ubicacion ?? Zona.PorDefecto(z.Tipo)));
 
     // null = quitar la zona del plano
     private static void AsignarPlano(Zona zona, RectanguloPlano? plano)
@@ -127,7 +129,8 @@ public static class ZonasNodosEndpoints
             .Where(z => z.Activa && z.PlanoX != null)
             .OrderBy(z => z.Nombre)
             .Select(z => new ZonaEnPlano(z.Id, z.Nombre, z.Tipo,
-                z.PlanoX!.Value, z.PlanoY!.Value, z.PlanoAncho!.Value, z.PlanoAlto!.Value))
+                z.PlanoX!.Value, z.PlanoY!.Value, z.PlanoAncho!.Value, z.PlanoAlto!.Value,
+                z.Ubicacion ?? Zona.PorDefecto(z.Tipo)))
             .ToListAsync();
 
         // El plano mide lo que ocupe la zona más lejana (0 x 0 si todavía no hay zonas dibujadas)

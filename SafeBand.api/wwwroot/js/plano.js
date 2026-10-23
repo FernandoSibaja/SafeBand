@@ -36,20 +36,28 @@ export function seEnciman(a, b) {
 /**
  * Devuelve un <svg> con el plano.
  * - resaltada: id de la zona que se pinta en azul (o null).
- * - estilo: cómo se pinta la resaltada: "actual" (azul), "antigua" (gris punteado) o "sos" (rojo).
+ * - estilo: cómo se pinta la resaltada: "actual" (azul), "cerca" (azul tenue, punteado), "antigua" (gris punteado) o "sos" (rojo).
  * - marcador: texto corto (p. ej. la inicial del niño) que se dibuja en un círculo dentro de la resaltada.
+ * - punto: { x, y, radio } posición calculada por triangulación (metros). Si se pasa, el marcador va en el punto
+ *   y alrededor se dibuja el círculo de incertidumbre, en lugar de ir en la esquina de la zona.
  * - alClic(zona): si se pasa, cada zona se puede tocar o elegir con teclado.
  * - cuadricula: dibuja líneas cada metro (útil al capturar medidas).
+ * - nodos: [{ x, y, etiqueta, actual }] puntos de los nodos receptores (actual = el que se está editando).
+ * - alClicPunto(x, y): si se pasa, tocar el plano devuelve la posición en metros (para colocar un nodo).
  * - etiqueta: descripción para lectores de pantalla.
  */
 export function dibujarPlano(zonas, {
-    resaltada = null, estilo = "actual", marcador = null, alClic = null, cuadricula = false, etiqueta = "Plano de la escuela",
+    resaltada = null, estilo = "actual", marcador = null, alClic = null, cuadricula = false,
+    nodos = [], alClicPunto = null, punto = null, etiqueta = "Plano de la escuela",
 } = {}) {
     const { ancho, alto } = medidasPlano(zonas);
     const vista = `${-MARGEN} ${-MARGEN} ${ancho + 2 * MARGEN} ${alto + 2 * MARGEN}`;
     const letraBase = Math.min(1.4, Math.max(0.35, Math.max(ancho, alto) / 16));
 
-    const raiz = svg("svg", { class: "plano-svg", viewBox: vista, role: "img", "aria-label": etiqueta, preserveAspectRatio: "xMidYMid meet" });
+    const raiz = svg("svg", {
+        class: alClicPunto ? "plano-svg elegible" : "plano-svg", viewBox: vista, role: "img", "aria-label": etiqueta,
+        preserveAspectRatio: "xMidYMid meet",
+    });
 
     if (cuadricula) {
         const lineas = [];
@@ -82,7 +90,7 @@ export function dibujarPlano(zonas, {
         raiz.append(grupo);
 
         // Marcador: círculo con texto en la esquina superior derecha de la zona resaltada
-        if (esResaltada && marcador) {
+        if (esResaltada && marcador && !punto) {
             const r = Math.min(letraBase * 0.95, z.ancho / 4, z.alto / 4);
             const cx = z.x + z.ancho - r - Math.min(0.3, r / 2);
             const cy = z.y + r + Math.min(0.3, r / 2);
@@ -90,6 +98,37 @@ export function dibujarPlano(zonas, {
                 svg("circle", { cx, cy, r, "vector-effect": "non-scaling-stroke" }),
                 svg("text", { x: cx, y: cy, "font-size": r * 1.1, "text-anchor": "middle", "dominant-baseline": "central" }, marcador)));
         }
+    }
+
+    // Posición triangulada: círculo de incertidumbre y el marcador en el centro
+    if (punto) {
+        const r = Math.min(letraBase * 0.8, Math.max(0.4, punto.radio));
+        raiz.append(svg("g", { class: `plano-punto ${estilo}`, "aria-hidden": "true" },
+            svg("circle", { class: "plano-incertidumbre", cx: punto.x, cy: punto.y, r: punto.radio, "vector-effect": "non-scaling-stroke" }),
+            svg("g", { class: `plano-marcador ${estilo}` },
+                svg("circle", { cx: punto.x, cy: punto.y, r, "vector-effect": "non-scaling-stroke" }),
+                marcador && svg("text", { x: punto.x, y: punto.y, "font-size": r * 1.1, "text-anchor": "middle", "dominant-baseline": "central" }, marcador))));
+    }
+
+    // Nodos receptores: punto con su código encima
+    const r = Math.max(0.25, letraBase * 0.32);
+    for (const n of nodos) {
+        raiz.append(svg("g", { class: n.actual ? "plano-nodo actual" : "plano-nodo" },
+            svg("title", {}, `${n.etiqueta} · (${n.x}, ${n.y}) m`),
+            svg("circle", { cx: n.x, cy: n.y, r: n.actual ? r * 1.4 : r, "vector-effect": "non-scaling-stroke" }),
+            svg("text", { x: n.x, y: n.y - r * 1.8, "font-size": letraBase * 0.6, "text-anchor": "middle" }, n.etiqueta)));
+    }
+
+    // Tocar el plano: convierte la posición del clic (pixeles) a metros del plano
+    if (alClicPunto) {
+        raiz.addEventListener("click", (e) => {
+            const punto = raiz.createSVGPoint();
+            punto.x = e.clientX;
+            punto.y = e.clientY;
+            const m = punto.matrixTransform(raiz.getScreenCTM().inverse());
+            const redondear = (v, max) => Math.round(Math.min(Math.max(v, 0), max) * 10) / 10;
+            alClicPunto(redondear(m.x, ancho), redondear(m.y, alto));
+        });
     }
     return raiz;
 }

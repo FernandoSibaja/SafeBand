@@ -28,7 +28,7 @@ public static class MisHijosEndpoints
 
     // GET /api/mis-hijos?desde=2026-10-07T07:00:00Z
     private static async Task<IResult> MisHijos(
-        ClaimsPrincipal yo, UserManager<Usuario> usuarios, AppDbContext db, DateTimeOffset? desde)
+        ClaimsPrincipal yo, UserManager<Usuario> usuarios, AppDbContext db, IConfiguration config, DateTimeOffset? desde)
     {
         var usuario = await usuarios.GetUserAsync(yo);
         if (usuario?.TutorId is null) return Results.Ok(new List<MiHijoResponse>());
@@ -48,11 +48,25 @@ public static class MisHijosEndpoints
             })
             .ToListAsync();
 
+        // Calibración de la prueba de alcance y tamaño del plano (para que el punto no quede fuera del edificio)
+        var calibracion = new Ubicacion.Calibracion(
+            config.GetValue("Ubicacion:Rssi1m", -84.3), config.GetValue("Ubicacion:N", 1.49));
+        // Zonas activas con su modo de ubicación ("por nodo" o "por triangulación") y su rectángulo
+        var filasZonas = await db.Zonas.AsNoTracking().Where(z => z.Activa)
+            .Select(z => new { z.Id, z.Nombre, z.Tipo, z.Ubicacion, TieneNodos = z.Nodos.Any(n => n.Activo),
+                z.PlanoX, z.PlanoY, z.PlanoAncho, z.PlanoAlto })
+            .ToListAsync();
+        var zonas = filasZonas.ToDictionary(z => z.Id, z => new Ubicacion.ZonaInfo(z.Id, z.Nombre,
+            z.Ubicacion ?? Zona.PorDefecto(z.Tipo), z.TieneNodos, z.PlanoX, z.PlanoY, z.PlanoAncho, z.PlanoAlto));
+        var dibujadas = zonas.Values.Where(z => z.X is not null).ToList();
+        double? anchoPlano = dibujadas.Count == 0 ? null : dibujadas.Max(z => z.X!.Value + z.Ancho!.Value);
+        double? altoPlano = dibujadas.Count == 0 ? null : dibujadas.Max(z => z.Y!.Value + z.Alto!.Value);
+
         var resultado = new List<MiHijoResponse>();
         foreach (var h in hijos)
         {
-            // Última detección: de las lecturas de los últimos segundos (varios nodos pueden oírla a la vez),
-            // la del nodo con la señal más fuerte. Usa el AlumnoId guardado en cada lectura: historial fiel.
+            // Última detección: con las lecturas de los últimos segundos (varios nodos pueden oírla a la vez) se decide
+            // la zona por nodo o por triangulación (Ubicacion.Decidir). Usa el AlumnoId guardado en cada lectura: historial fiel.
             var horaUltima = await db.LecturasBle.AsNoTracking()
                 .Where(l => l.AlumnoId == h.AlumnoId)
                 .MaxAsync(l => (DateTime?)l.Timestamp);
@@ -61,12 +75,16 @@ public static class MisHijosEndpoints
             {
                 var recientes = await Lecturas(db, h.AlumnoId, horaUltima.Value - Ubicacion.Simultaneas);
                 var l = Ubicacion.MasFuerte(recientes);
-                ultima = new UltimaDeteccion(l.ZonaId, l.Zona, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja, l.Hora, Ubicacion.EsDebil(l));
+                var d = Ubicacion.Decidir(recientes, zonas, calibracion, anchoPlano, altoPlano);
+                var p = d.Posicion;
+                ultima = new UltimaDeteccion(d.ZonaId, d.Zona, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja, l.Hora, d.Cerca, d.Metodo,
+                    p is null ? null : new PosicionEstimada(p.X, p.Y, p.Radio, p.Nodos));
             }
 
-            // Recorrido: por cada momento, la zona del nodo con la señal más fuerte (no salta entre nodos)
+            // Recorrido: por cada momento, la zona decidida con la misma regla que la última detección
             var delPeriodo = await Lecturas(db, h.AlumnoId, desdeUtc, MaxLecturasRecorrido);
-            var recorrido = ArmarRecorrido(Ubicacion.PorMomento(delPeriodo).Select(l => (l.Zona, l.Hora)));
+            var recorrido = ArmarRecorrido(Ubicacion.Bloques(delPeriodo)
+                .Select(b => (Ubicacion.Decidir(b, zonas, calibracion, anchoPlano, altoPlano).Zona, b.Max(l => l.Hora))));
 
             resultado.Add(new MiHijoResponse(h.AlumnoId, h.Nombre, h.Parentesco, h.Pulsera, ultima, recorrido));
         }
@@ -80,10 +98,11 @@ public static class MisHijosEndpoints
             .Where(l => l.AlumnoId == alumnoId && l.Timestamp >= desde)
             .OrderBy(l => l.Timestamp)
             .Take(maximo)
-            .Select(l => new { l.Timestamp, l.Nodo.ZonaId, Zona = l.Nodo.Zona.Nombre, l.Rssi, l.Nodo.UmbralRssi, l.Puesta, l.Sos, l.BateriaBaja })
+            .Select(l => new { l.Timestamp, l.Nodo.ZonaId, Zona = l.Nodo.Zona.Nombre, l.Rssi, l.Nodo.UmbralRssi, l.Puesta, l.Sos, l.BateriaBaja,
+                l.NodoId, l.Nodo.PlanoX, l.Nodo.PlanoY })
             .ToListAsync();
         return filas.Select(f => new Ubicacion.Lectura(DateTime.SpecifyKind(f.Timestamp, DateTimeKind.Utc),
-            f.ZonaId, f.Zona, f.Rssi, f.UmbralRssi, f.Puesta, f.Sos, f.BateriaBaja)).ToList();
+            f.ZonaId, f.Zona, f.Rssi, f.UmbralRssi, f.Puesta, f.Sos, f.BateriaBaja, f.NodoId, f.PlanoX, f.PlanoY)).ToList();
     }
 
     /// <summary>

@@ -112,23 +112,33 @@ function tarjeta(h, plano) {
                     el("span", {}, t.zona))))));
 }
 
-// Plano con la zona de la última detección resaltada (null si la escuela no ha dibujado zonas)
+// Plano de la última detección (null si la escuela no ha dibujado zonas). Según cómo la ubicó la API:
+// - "Nodo": se resalta la zona (el nodo de su salón es el que mejor lo oye).
+// - "Triangulacion": se resalta la zona donde cae el punto y se dibuja el punto con su círculo de incertidumbre.
+// - "Cercania": señal débil; se resalta tenue la zona del nodo más cercano, sin punto.
 function planoDelHijo(h, u, reciente, plano) {
     if (!plano || plano.zonas.length === 0) return null;
     const enPlano = plano.zonas.some((z) => z.id === u.zonaId);
-    const estilo = u.sos ? "sos" : reciente ? "actual" : "antigua";
+    const conPunto = u.metodo === "Triangulacion" && u.posicion != null;
+    const estilo = u.sos ? "sos" : !reciente ? "antigua" : u.senalDebil ? "cerca" : "actual";
     const descripcion = enPlano
         ? `Plano de la escuela: ${h.nombre} ${!reciente ? "se detectó por última vez en" : u.senalDebil ? "está cerca de" : "está en"} ${u.zona}`
+            + (conPunto ? `, a unos ${Math.round(u.posicion.radio)} metros del punto marcado` : "")
         : "Plano de la escuela";
+    const nota = !enPlano ? `La zona «${u.zona}» todavía no está dibujada en el plano.`
+        : conPunto ? `El círculo marca la ubicación aproximada (±${Math.round(u.posicion.radio)} m).`
+        : u.senalDebil ? "Señal débil: está en los alrededores de esta zona."
+        : null;
     return el("div", { class: "hijo-plano" },
         el("div", { class: "plano-marco" },
             dibujarPlano(plano.zonas, {
                 resaltada: enPlano ? u.zonaId : null,
                 estilo,
                 marcador: h.nombre.trim().charAt(0).toUpperCase(),
+                punto: conPunto ? u.posicion : null,
                 etiqueta: descripcion,
             })),
-        !enPlano && el("p", { class: "secundario nota" }, `La zona «${u.zona}» todavía no está dibujada en el plano.`));
+        nota && el("p", { class: "secundario nota" }, nota));
 }
 
 // "8:02 – 8:40", o solo "8:02" si fue una sola detección

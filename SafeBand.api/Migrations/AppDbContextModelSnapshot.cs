@@ -299,6 +299,12 @@ namespace SafeBand.api.Migrations
                     b.Property<bool>("EsPortatil")
                         .HasColumnType("bit");
 
+                    b.Property<double?>("PlanoX")
+                        .HasColumnType("float");
+
+                    b.Property<double?>("PlanoY")
+                        .HasColumnType("float");
+
                     b.Property<DateTime?>("UltimoContacto")
                         .HasColumnType("datetime2");
 
@@ -547,6 +553,10 @@ namespace SafeBand.api.Migrations
 
                     b.Property<string>("Tipo")
                         .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("Ubicacion")
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
