@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using SafeBand.api.Contracts;
 using SafeBand.api.Data;
 using SafeBand.api.Models;
+using SafeBand.api.Servicios;
 
 namespace SafeBand.api.Endpoints;
 
@@ -50,26 +51,39 @@ public static class MisHijosEndpoints
         var resultado = new List<MiHijoResponse>();
         foreach (var h in hijos)
         {
-            // Última detección (usa el AlumnoId guardado en cada lectura: historial fiel)
-            var ultima = await db.LecturasBle.AsNoTracking()
+            // Última detección: de las lecturas de los últimos segundos (varios nodos pueden oírla a la vez),
+            // la del nodo con la señal más fuerte. Usa el AlumnoId guardado en cada lectura: historial fiel.
+            var horaUltima = await db.LecturasBle.AsNoTracking()
                 .Where(l => l.AlumnoId == h.AlumnoId)
-                .OrderByDescending(l => l.Timestamp)
-                .Select(l => new UltimaDeteccion(l.Nodo.ZonaId, l.Nodo.Zona.Nombre, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja,
-                    DateTime.SpecifyKind(l.Timestamp, DateTimeKind.Utc)))
-                .FirstOrDefaultAsync();
+                .MaxAsync(l => (DateTime?)l.Timestamp);
+            UltimaDeteccion? ultima = null;
+            if (horaUltima is not null)
+            {
+                var recientes = await Lecturas(db, h.AlumnoId, horaUltima.Value - Ubicacion.Simultaneas);
+                var l = Ubicacion.MasFuerte(recientes);
+                ultima = new UltimaDeteccion(l.ZonaId, l.Zona, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja, l.Hora, Ubicacion.EsDebil(l));
+            }
 
-            // Lecturas del periodo, en orden, para armar el recorrido
-            var lecturas = await db.LecturasBle.AsNoTracking()
-                .Where(l => l.AlumnoId == h.AlumnoId && l.Timestamp >= desdeUtc)
-                .OrderBy(l => l.Timestamp)
-                .Take(MaxLecturasRecorrido)
-                .Select(l => new { Zona = l.Nodo.Zona.Nombre, l.Timestamp })
-                .ToListAsync();
+            // Recorrido: por cada momento, la zona del nodo con la señal más fuerte (no salta entre nodos)
+            var delPeriodo = await Lecturas(db, h.AlumnoId, desdeUtc, MaxLecturasRecorrido);
+            var recorrido = ArmarRecorrido(Ubicacion.PorMomento(delPeriodo).Select(l => (l.Zona, l.Hora)));
 
-            resultado.Add(new MiHijoResponse(h.AlumnoId, h.Nombre, h.Parentesco, h.Pulsera, ultima,
-                ArmarRecorrido(lecturas.Select(l => (l.Zona, DateTime.SpecifyKind(l.Timestamp, DateTimeKind.Utc))))));
+            resultado.Add(new MiHijoResponse(h.AlumnoId, h.Nombre, h.Parentesco, h.Pulsera, ultima, recorrido));
         }
         return Results.Ok(resultado);
+    }
+
+    // Lecturas de un alumno desde una hora, en orden, con lo necesario para decidir la zona
+    private static async Task<List<Ubicacion.Lectura>> Lecturas(AppDbContext db, int alumnoId, DateTime desde, int maximo = 200)
+    {
+        var filas = await db.LecturasBle.AsNoTracking()
+            .Where(l => l.AlumnoId == alumnoId && l.Timestamp >= desde)
+            .OrderBy(l => l.Timestamp)
+            .Take(maximo)
+            .Select(l => new { l.Timestamp, l.Nodo.ZonaId, Zona = l.Nodo.Zona.Nombre, l.Rssi, l.Nodo.UmbralRssi, l.Puesta, l.Sos, l.BateriaBaja })
+            .ToListAsync();
+        return filas.Select(f => new Ubicacion.Lectura(DateTime.SpecifyKind(f.Timestamp, DateTimeKind.Utc),
+            f.ZonaId, f.Zona, f.Rssi, f.UmbralRssi, f.Puesta, f.Sos, f.BateriaBaja)).ToList();
     }
 
     /// <summary>

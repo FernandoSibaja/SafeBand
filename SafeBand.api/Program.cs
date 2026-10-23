@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Diagnostics;
 using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Identity;
@@ -16,8 +17,9 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddOpenApi();
 
 // Base de datos: SQL Server con la cadena "SafeBand"
-// (en tu PC viene de appsettings.Development.json; en Azure, de la configuración del App Service).
-// EnableRetryOnFailure: reintenta si la BD gratuita de Azure está "dormida" y tarda en despertar.
+// (en tu PC viene de appsettings.Development.json; en la nube, de appsettings.Production.json,
+// que se publica con la API pero NO se sube a Git: ver appsettings.Production.example.json).
+// EnableRetryOnFailure: reintenta si la BD de la nube tarda en responder o se reinicia.
 builder.Services.AddDbContext<AppDbContext>(opt =>
     opt.UseSqlServer(builder.Configuration.GetConnectionString("SafeBand"),
         sql => sql.EnableRetryOnFailure()));
@@ -44,6 +46,13 @@ builder.Services.AddIdentityCore<Usuario>(o =>
     .AddSignInManager()                       // iniciar/cerrar sesión
     .AddErrorDescriber<ErroresIdentityEs>();  // mensajes de contraseña en español
 
+// Claves que cifran la cookie de sesión: se guardan en App_Data/claves para que sobrevivan
+// a los reinicios del servidor (en un hosting compartido el perfil de Windows puede no conservarse,
+// y sin esto todos los usuarios tendrían que volver a iniciar sesión tras cada reinicio).
+builder.Services.AddDataProtection()
+    .SetApplicationName("SafeBand")
+    .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "App_Data", "claves")));
+
 // Sesión con cookie: al iniciar sesión el navegador guarda "SafeBand.Sesion" y la manda en cada petición
 builder.Services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
 builder.Services.ConfigureApplicationCookie(o =>
@@ -51,7 +60,7 @@ builder.Services.ConfigureApplicationCookie(o =>
     o.Cookie.Name = "SafeBand.Sesion";
     o.Cookie.HttpOnly = true;                       // JavaScript no puede leerla (protege contra robo por scripts)
     o.Cookie.SameSite = SameSiteMode.Strict;        // no se manda desde otros sitios (protege contra CSRF)
-    o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;  // en HTTPS (Azure) viaja solo cifrada
+    o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;  // en HTTPS (nube) viaja solo cifrada
     o.ExpireTimeSpan = TimeSpan.FromDays(7);
     o.SlidingExpiration = true;                     // se renueva mientras se use
 
@@ -114,11 +123,11 @@ app.UseExceptionHandler(e => e.Run(async ctx =>
 }));
 
 // Descripción de la API y página /swagger para probarla.
-// Activas también en Azure como evidencia del backend desplegado (prototipo, sin datos sensibles aún).
+// Activas también en la nube como evidencia del backend desplegado (prototipo, sin datos sensibles aún).
 app.MapOpenApi();
 app.UseSwaggerUI(o => o.SwaggerEndpoint("/openapi/v1.json", "SafeBand API"));
 
-// Al arrancar (en tu PC y en Azure):
+// Al arrancar (en tu PC y en la nube):
 //   1. Aplica las migraciones pendientes → crea/actualiza las tablas solo.
 //   2. Inserta los datos iniciales si la BD está vacía.
 //   3. Crea los roles y el administrador inicial (si falta).

@@ -90,7 +90,7 @@ function tarjeta(h, plano) {
                     ? "Su pulsera todavía no ha sido detectada por ningún nodo."
                     : "Todavía no tiene pulsera asignada. La escuela se la dará.")
                 : [
-                    el("p", { class: "hijo-ahora-etiqueta" }, reciente ? "Está en" : "Último lugar donde se detectó"),
+                    el("p", { class: "hijo-ahora-etiqueta" }, !reciente ? "Último lugar donde se detectó" : u.senalDebil ? "Cerca de" : "Está en"),
                     el("p", { class: "hijo-ahora-zona" }, u.zona),
                     el("p", { class: "secundario" },
                         esReciente(u.timestamp) ? `${haceCuanto(u.timestamp)} (${hora(u.timestamp)})` : `el ${fechaHora(u.timestamp)}`),
@@ -118,7 +118,7 @@ function planoDelHijo(h, u, reciente, plano) {
     const enPlano = plano.zonas.some((z) => z.id === u.zonaId);
     const estilo = u.sos ? "sos" : reciente ? "actual" : "antigua";
     const descripcion = enPlano
-        ? `Plano de la escuela: ${h.nombre} ${reciente ? "está en" : "se detectó por última vez en"} ${u.zona}`
+        ? `Plano de la escuela: ${h.nombre} ${!reciente ? "se detectó por última vez en" : u.senalDebil ? "está cerca de" : "está en"} ${u.zona}`
         : "Plano de la escuela";
     return el("div", { class: "hijo-plano" },
         el("div", { class: "plano-marco" },

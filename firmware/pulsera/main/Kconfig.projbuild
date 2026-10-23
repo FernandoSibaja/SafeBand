@@ -12,9 +12,9 @@ menu "SafeBand - Pulsera"
         range 0 1
         default 0
         help
-            El KY-025 (o un jumper) va en GPIO4, que tiene pull-up interno.
-            0 = la pulsera está puesta cuando GPIO4 está en GND (jumper a GND, o un KY-025
-                que baja su salida al detectar el imán).
+            El reed switch (o un jumper) va de GPIO4 a GND; GPIO4 tiene pull-up interno.
+            0 = la pulsera está puesta cuando GPIO4 está en GND (reed normalmente abierto que se
+                cierra con el imán del broche, o jumper a GND).
             1 = la pulsera está puesta cuando GPIO4 está en alto.
             Si al acercar el imán el estado sale al revés, cambia este valor.
 

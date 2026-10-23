@@ -14,7 +14,13 @@ public class Nodo
     public Zona Zona { get; set; } = null!;
 
     /// <summary>RSSI mínimo (dBm) para considerar que la pulsera está dentro de la zona.</summary>
-    public int UmbralRssi { get; set; } = -75;
+    public int UmbralRssi { get; set; } = -90;   // ≈ 5–6 m según la prueba de alcance (2026-10-20)
+
+    // Posición del nodo en el plano de la escuela, en METROS (mismo sistema que los rectángulos de las zonas:
+    // (0, 0) = esquina superior izquierda). La usa la triangulación. Opcional: sin posición, el nodo solo sirve
+    // para decidir la zona por señal más fuerte.
+    public double? PlanoX { get; set; }
+    public double? PlanoY { get; set; }
 
     /// <summary>Nodo con batería para salidas escolares.</summary>
     public bool EsPortatil { get; set; }

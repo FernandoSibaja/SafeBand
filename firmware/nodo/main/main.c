@@ -30,6 +30,7 @@
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "esp_http_client.h"
+#include "esp_crt_bundle.h"
 #include "nvs_flash.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -43,7 +44,7 @@ static const char *TAG = "nodo";
 #define MAX_PULSERAS         16
 #define ID_MAX               16
 #define COOLDOWN_SOS_MS      5000    // mínimo entre dos avisos SOS de la misma pulsera
-#define TIMEOUT_HTTP_MS      5000
+#define TIMEOUT_HTTP_MS      10000   // la nube está en Europa y el HTTPS agrega el saludo TLS
 #define TAM_COLA             16
 
 // Bits de estado (iguales a los de la pulsera)
@@ -157,6 +158,9 @@ static void enviar(const lectura_t *l)
         .url = CONFIG_SAFEBAND_API_URL,
         .method = HTTP_METHOD_POST,
         .timeout_ms = TIMEOUT_HTTP_MS,
+        // HTTPS (nube): verifica el certificado del servidor con los certificados raíz que trae ESP-IDF.
+        // Con una URL http:// (red local) simplemente no se usa.
+        .crt_bundle_attach = esp_crt_bundle_attach,
     };
     esp_http_client_handle_t cliente = esp_http_client_init(&cfg);
     esp_http_client_set_header(cliente, "Content-Type", "application/json");

@@ -17,7 +17,8 @@ public record UltimaDeteccion(
     bool Puesta,
     bool Sos,
     bool BateriaBaja,
-    DateTime Timestamp);
+    DateTime Timestamp,
+    bool SenalDebil);                // la señal más fuerte está bajo el umbral de su nodo: "cerca de" la zona
 
 /// <summary>Un tramo del recorrido: estuvo en esta zona de tal hora a tal hora.</summary>
 public record TramoRecorrido(string Zona, DateTime Desde, DateTime Hasta);

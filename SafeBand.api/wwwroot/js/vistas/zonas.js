@@ -293,8 +293,8 @@ export function vistaZonas(contenedor) {
             id: "n-descripcion", autocomplete: "off", placeholder: "Arriba del pizarrón", value: nodo?.descripcion ?? "",
         }), { opcional: true, ancho: true, ayuda: "Dónde está colocado, para encontrarlo." });
         const umbral = campo("n-umbral", "Umbral de señal (dBm)", el("input", {
-            id: "n-umbral", type: "number", min: -127, max: 0, step: 1, value: nodo?.umbralRssi ?? -75,
-        }), { ayuda: "Señal mínima para decir que la pulsera está en esta zona. Más cerca de 0 = zona más chica." });
+            id: "n-umbral", type: "number", min: -127, max: 0, step: 1, value: nodo?.umbralRssi ?? -90,
+        }), { ayuda: "Señal mínima para decir que la pulsera está en esta zona. Según la prueba de alcance, −90 dBm ≈ 5–6 m. Más cerca de 0 = zona más chica." });
         const portatil = el("input", { type: "checkbox", checked: nodo?.esPortatil ?? false });
         const casillaPortatil = el("label", { class: "casilla ancho" }, portatil, "Nodo portátil (para salidas escolares, con batería)");
 
@@ -330,7 +330,7 @@ export function vistaZonas(contenedor) {
                     codigo: codigo.input.value.trim(),
                     zonaId: selectorZona.value ? Number(selectorZona.value) : null,
                     descripcion: descripcion.input.value.trim() || null,
-                    umbralRssi: umbral.input.value === "" ? -75 : Number(umbral.input.value),
+                    umbralRssi: umbral.input.value === "" ? -90 : Number(umbral.input.value),
                     esPortatil: portatil.checked,
                 };
                 try {

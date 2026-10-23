@@ -7,7 +7,8 @@
  * Pines (ver el documento de arquitectura):
  *   - GPIO5 (D3)  botón SOS a GND. También sirve el botón BOOT del XIAO (GPIO9).
  *                 Mantener 2 s -> SOS activo por 30 s.
- *   - GPIO4 (D2)  reed switch KY-025 (o jumper a GND) -> pulsera PUESTA.
+ *   - GPIO4 (D2)  reed switch simple a GND (o jumper a GND) -> pulsera PUESTA.
+ *                 Sin módulo ni comparador: usa el pull-up interno (consumo ~0 con el broche abierto).
  *                 El nivel que significa "puesta" se elige en menuconfig.
  *   - GPIO3 (D1)  ADC: VBAT / 2 por divisor de 2 x 100 kOhm (opcional, menuconfig).
  *   - GPIO7 (D5)  LED WS2812: azul = SOS, rojo parpadeando = quitada,
@@ -41,7 +42,7 @@ static const char *TAG = "pulsera";
 // ---------- Pines (XIAO ESP32-C3) ----------
 #define PIN_BOTON_SOS   GPIO_NUM_5    // D3: botón SOS a GND
 #define PIN_BOTON_BOOT  GPIO_NUM_9    // botón BOOT del XIAO (para probar sin botón externo)
-#define PIN_REED        GPIO_NUM_4    // D2: salida del KY-025 (o jumper)
+#define PIN_REED        GPIO_NUM_4    // D2: reed switch a GND (imán en el broche) o jumper
 #define PIN_BATERIA     GPIO_NUM_3    // D1: ADC, VBAT / 2
 #define PIN_MOTOR       GPIO_NUM_6    // D4: base del 2N2222 (por 1 kOhm)
 #define PIN_LED         GPIO_NUM_7    // D5: datos del WS2812

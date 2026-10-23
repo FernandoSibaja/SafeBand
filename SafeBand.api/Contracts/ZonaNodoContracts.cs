@@ -69,7 +69,9 @@ public record ZonaEnPlano(
 
 /// <summary>
 /// JSON para dar de alta o editar un nodo. Ejemplo:
-/// { "codigo": "nodo-2", "zonaId": 2, "descripcion": "Junto a la cancha", "umbralRssi": -75, "esPortatil": false }
+/// { "codigo": "nodo-2", "zonaId": 2, "descripcion": "Junto a la cancha", "umbralRssi": -90, "esPortatil": false,
+///   "posicion": { "x": 12.5, "y": 3.0 } }
+/// "posicion" es opcional (dónde está el nodo en el plano, en metros; la usa la triangulación).
 /// </summary>
 public record GuardarNodoRequest(
     // Debe coincidir con el "Código del nodo" configurado en el firmware (menuconfig)
@@ -85,9 +87,21 @@ public record GuardarNodoRequest(
     string? Descripcion = null,
 
     [property: Range(-127, 0, ErrorMessage = "El campo 'umbralRssi' debe estar entre -127 y 0 dBm.")]
-    int UmbralRssi = -75,
+    int UmbralRssi = -90,
 
-    bool EsPortatil = false);
+    bool EsPortatil = false,
+
+    PosicionPlano? Posicion = null);
+
+/// <summary>Un punto en el plano de la escuela, en metros.</summary>
+public record PosicionPlano(
+    [property: Required(ErrorMessage = "El campo 'posicion.x' es obligatorio.")]
+    [property: Range(0, 1000, ErrorMessage = "El campo 'posicion.x' debe estar entre 0 y 1000 metros.")]
+    double? X,
+
+    [property: Required(ErrorMessage = "El campo 'posicion.y' es obligatorio.")]
+    [property: Range(0, 1000, ErrorMessage = "El campo 'posicion.y' debe estar entre 0 y 1000 metros.")]
+    double? Y);
 
 public record NodoResponse(
     int Id,
@@ -98,4 +112,5 @@ public record NodoResponse(
     int UmbralRssi,
     bool EsPortatil,
     bool Activo,
-    DateTime? UltimoContacto);
+    DateTime? UltimoContacto,
+    PosicionPlano? Posicion);

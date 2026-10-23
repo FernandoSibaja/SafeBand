@@ -223,10 +223,13 @@ public static class ZonasNodosEndpoints
         nodo.Descripcion = string.IsNullOrWhiteSpace(req.Descripcion) ? null : req.Descripcion.Trim();
         nodo.UmbralRssi = req.UmbralRssi;
         nodo.EsPortatil = req.EsPortatil;
+        nodo.PlanoX = req.Posicion?.X;   // null = quitar el nodo del plano
+        nodo.PlanoY = req.Posicion?.Y;
     }
 
     private static IQueryable<NodoResponse> ProyectarNodos(IQueryable<Nodo> q) =>
         q.Select(n => new NodoResponse(
             n.Id, n.Codigo, n.Descripcion, n.ZonaId, n.Zona.Nombre, n.UmbralRssi, n.EsPortatil, n.Activo,
-            n.UltimoContacto == null ? null : DateTime.SpecifyKind(n.UltimoContacto.Value, DateTimeKind.Utc)));
+            n.UltimoContacto == null ? null : DateTime.SpecifyKind(n.UltimoContacto.Value, DateTimeKind.Utc),
+            n.PlanoX == null ? null : new PosicionPlano(n.PlanoX, n.PlanoY)));
 }

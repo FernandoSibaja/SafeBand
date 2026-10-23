@@ -19,10 +19,10 @@ menu "SafeBand - Nodo"
 
     config SAFEBAND_API_URL
         string "URL del endpoint de lecturas"
-        default "http://192.168.1.50:5213/api/lecturas"
+        default "https://safeband-sibaja.runasp.net/api/lecturas"
         help
-            Local: http://<IP-de-tu-PC>:5213/api/lecturas
-            Azure: https://<tu-app>.azurewebsites.net/api/lecturas
+            Nube (MonsterASP.NET): https://safeband-sibaja.runasp.net/api/lecturas
+            Local (pruebas):       http://<IP-de-tu-PC>:5213/api/lecturas
 
     config SAFEBAND_VENTANA_S
         int "Ventana de promedio (segundos)"

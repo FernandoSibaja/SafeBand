@@ -361,3 +361,7 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+# SafeBand: secretos de producción (conexión a la BD de MonsterASP.NET, administrador inicial)
+**/appsettings.Production.json
+# SafeBand: claves de Data Protection (cifran la cookie de sesión)
+**/App_Data/claves/
