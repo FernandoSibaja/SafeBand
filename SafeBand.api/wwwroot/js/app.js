@@ -11,21 +11,29 @@ import { el, icono, logo } from "./ui.js";
 import { vistaLogin } from "./vistas/login.js";
 import { vistaVivo } from "./vistas/vivo.js";
 import { vistaAlumnos } from "./vistas/alumnos.js";
+import { vistaGrupos } from "./vistas/grupos.js";
+import { vistaPersonal } from "./vistas/personal.js";
 import { vistaTutores } from "./vistas/tutores.js";
 import { vistaZonas } from "./vistas/zonas.js";
 import { vistaPulseras } from "./vistas/pulseras.js";
 import { vistaHijos } from "./vistas/hijos.js";
+import { vistaMiGrupo } from "./vistas/migrupo.js";
+import { vistaEscuela } from "./vistas/escuela.js";
 
 const raiz = document.getElementById("app");
 
 // Secciones del menú: qué roles pueden verlas y qué vista dibujan
 const SECCIONES = [
     { ruta: "hijos",    titulo: "Mis hijos",       icono: "alumnos",  roles: ["Padre"], vista: vistaHijos },
-    { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador", "Maestro"], vista: vistaVivo },
+    { ruta: "grupo",    titulo: "Mi grupo",        icono: "grupos",   roles: ["Maestro"], vista: vistaMiGrupo },
+    { ruta: "escuela",  titulo: "Panel de la escuela", icono: "zonas", roles: ["Administrador"], vista: vistaEscuela },
+    { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador"], vista: vistaVivo },
     { ruta: "alumnos",  titulo: "Alumnos",         icono: "alumnos",  roles: ["Administrador"], vista: vistaAlumnos },
+    { ruta: "grupos",   titulo: "Grupos",          icono: "grupos",   roles: ["Administrador"], vista: vistaGrupos },
     { ruta: "pulseras", titulo: "Pulseras",        icono: "pulseras", roles: ["Administrador"], vista: vistaPulseras },
     { ruta: "tutores",  titulo: "Tutores",         icono: "tutores",  roles: ["Administrador"], vista: vistaTutores },
     { ruta: "zonas",    titulo: "Zonas y nodos",   icono: "zonas",    roles: ["Administrador"], vista: vistaZonas },
+    { ruta: "personal", titulo: "Personal",        icono: "personal", roles: ["Administrador"], vista: vistaPersonal },
 ];
 
 let usuario = null;          // quién inició sesión (o null)
@@ -49,7 +57,7 @@ async function iniciar() {
 
 function alIniciarSesion(datos) {
     usuario = datos;
-    if (!location.hash) location.hash = "#/vivo";
+    if (!location.hash) location.hash = "#/";   // sin ruta → la primera sección de su rol
     dibujar();
 }
 
@@ -110,7 +118,7 @@ function dibujar(mensajeLogin) {
 
 function lateral(permitidas, actual) {
     return el("aside", { class: "lateral", id: "lateral" },
-        el("a", { class: "marca", href: "#/vivo" }, logo(), "SafeBand"),
+        el("a", { class: "marca", href: "#/" }, logo(), "SafeBand"),
         el("nav", { class: "menu", "aria-label": "Secciones" },
             permitidas.map((s) =>
                 el("a", {
@@ -134,7 +142,7 @@ function barraMovil() {
         "aria-label": "Abrir menú",
         onclick: () => document.querySelector(".panel").classList.toggle("menu-abierto"),
     }, icono("menu"));
-    return el("header", { class: "barra-movil" }, el("a", { class: "marca", href: "#/vivo" }, logo(24), "SafeBand"), boton);
+    return el("header", { class: "barra-movil" }, el("a", { class: "marca", href: "#/" }, logo(24), "SafeBand"), boton);
 }
 
 function mostrarSinConexion(mensaje) {

@@ -38,6 +38,9 @@ export function seEnciman(a, b) {
  * - resaltada: id de la zona que se pinta en azul (o null).
  * - estilo: cómo se pinta la resaltada: "actual" (azul), "cerca" (azul tenue, punteado), "antigua" (gris punteado) o "sos" (rojo).
  * - marcador: texto corto (p. ej. la inicial del niño) que se dibuja en un círculo dentro de la resaltada.
+ * - marcadores: [{ x, y, texto, estilo, titulo, r }] varios niños a la vez (p. ej. "Mi grupo"); estilo como arriba;
+ *   r = radio máximo en metros (para que quepan varios en una zona chica); cuenta: true = círculo con un número
+ *   (varios niños juntos), que usa su r tal cual para que se lea.
  * - punto: { x, y, radio } posición calculada por triangulación (metros). Si se pasa, el marcador va en el punto
  *   y alrededor se dibuja el círculo de incertidumbre, en lugar de ir en la esquina de la zona.
  * - alClic(zona): si se pasa, cada zona se puede tocar o elegir con teclado.
@@ -48,7 +51,7 @@ export function seEnciman(a, b) {
  */
 export function dibujarPlano(zonas, {
     resaltada = null, estilo = "actual", marcador = null, alClic = null, cuadricula = false,
-    nodos = [], alClicPunto = null, punto = null, etiqueta = "Plano de la escuela",
+    nodos = [], alClicPunto = null, punto = null, marcadores = [], etiqueta = "Plano de la escuela",
 } = {}) {
     const { ancho, alto } = medidasPlano(zonas);
     const vista = `${-MARGEN} ${-MARGEN} ${ancho + 2 * MARGEN} ${alto + 2 * MARGEN}`;
@@ -108,6 +111,16 @@ export function dibujarPlano(zonas, {
             svg("g", { class: `plano-marcador ${estilo}` },
                 svg("circle", { cx: punto.x, cy: punto.y, r, "vector-effect": "non-scaling-stroke" }),
                 marcador && svg("text", { x: punto.x, y: punto.y, "font-size": r * 1.1, "text-anchor": "middle", "dominant-baseline": "central" }, marcador))));
+    }
+
+    // Varios niños: un círculo con su inicial en cada posición (encima de todo)
+    const rmBase = Math.max(0.35, letraBase * 0.5);
+    for (const m of marcadores) {
+        const rm = m.cuenta ? m.r : Math.min(rmBase, m.r ?? rmBase);
+        raiz.append(svg("g", { class: `plano-marcador ${m.estilo ?? "actual"}` },
+            m.titulo && svg("title", {}, m.titulo),
+            svg("circle", { cx: m.x, cy: m.y, r: rm, "vector-effect": "non-scaling-stroke" }),
+            svg("text", { x: m.x, y: m.y, "font-size": rm * 1.05, "text-anchor": "middle", "dominant-baseline": "central" }, m.texto)));
     }
 
     // Nodos receptores: punto con su código encima

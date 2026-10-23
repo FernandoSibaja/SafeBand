@@ -1,7 +1,7 @@
 # SafeBand · Checklist para terminar el proyecto
 
 > Entrega final: finales de noviembre de 2026. Se marca con `[x]` lo terminado.
-> Orden recomendado: Ubicación → Alertas → Nube → Terminales → App → Pruebas y entrega.
+> Orden recomendado: Ubicación → Escuela (grupos y maestros) → Alertas → Nube → Terminales → App → Pruebas y entrega.
 > Si el tiempo aprieta, los primeros candidatos a "trabajo futuro" son: pase de lista, tienda y notificaciones push.
 
 ## Ubicación
@@ -18,6 +18,12 @@
 - [ ] 6. Conectar y probar reed switch + imán, botón SOS, LED WS2812 y motor con transistor
 - [ ] 7. Divisor de voltaje de la batería + prueba de autonomía con la LiPo
 - [ ] 8. Carcasa o correa
+
+## Escuela: director y maestros
+- [x] 8a. **Grupos** (3°A…): nombre, salón (zona) y maestro; asignar alumnos a su grupo
+- [x] 8b. **Cuentas de personal**: invitación para maestros (como la de padres), alta y baja desde la página
+- [x] 8c. **Mi grupo** (maestro): sus alumnos con zona, pulsera puesta/quitada y batería, resumen y plano solo con su grupo (filtrado en la API)
+- [x] 8d. **Panel de la escuela** (director): plano con todos los niños como puntos, conteo por zona, filtro por grupo y buscador
 
 ## Seguridad y alertas
 - [ ] 9. Alertas: SOS, pulsera quitada, sin señal y salida sin recogida (la escuela las atiende, el padre las ve)

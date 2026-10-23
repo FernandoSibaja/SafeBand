@@ -1,7 +1,8 @@
 // ============================================================
 // Pantalla de entrada, con dos modos:
 //   - Iniciar sesión      → POST /api/auth/login
-//   - Crear mi cuenta     → POST /api/auth/registro (padres, con el código que les dio la escuela)
+//   - Crear mi cuenta     → POST /api/auth/registro (padres y personal, con el código que les dio la escuela;
+//                           el personal también lo usa para poner una contraseña nueva)
 // ============================================================
 
 import { api } from "../api.js";
@@ -125,7 +126,8 @@ function formularioRegistro({ alIniciarSesion, alVolver }) {
     return el("form", { class: "login-form", onsubmit: enviar },
         el("div", {},
             el("h1", {}, "Crea tu cuenta"),
-            el("p", { class: "ayuda" }, "Usa el correo que diste a la escuela y el código de tu invitación impresa.")),
+            el("p", { class: "ayuda" }, "Usa el correo que diste a la escuela y el código de tu invitación impresa."),
+            el("p", { class: "ayuda" }, "¿Eres maestro y olvidaste tu contraseña? Pide un código nuevo a la dirección y úsalo aquí.")),
         aviso,
         el("div", { class: "campo" }, el("label", { for: "r-email" }, "Correo"), email),
         el("div", { class: "campo" }, el("label", { for: "r-codigo" }, "Código de invitación"), codigo),

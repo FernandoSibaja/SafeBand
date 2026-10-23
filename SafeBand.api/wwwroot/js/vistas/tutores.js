@@ -9,7 +9,7 @@
 // ============================================================
 
 import { api } from "../api.js";
-import { el, icono, logo, avisoBreve, confirmar, campo, crearCajon, normalizar } from "../ui.js";
+import { el, icono, avisoBreve, confirmar, campo, crearCajon, normalizar, mostrarInvitacion, etiquetaCuenta } from "../ui.js";
 
 const PARENTESCOS = ["Madre", "Padre", "Abuela", "Abuelo", "Tía", "Tío", "Tutor legal"];
 
@@ -268,7 +268,10 @@ export function vistaTutores(contenedor) {
                 const invitacion = await api(`/api/tutores/${tutor.id}/invitacion`, { metodo: "POST" });
                 cerrar();
                 cargar();
-                mostrarInvitacion(invitacion, tutor.hijos.length > 0);
+                mostrarInvitacion(invitacion, {
+                    nota: "Con tu cuenta podrás ver en qué zona de la escuela está tu hijo o hija y recibir avisos. ",
+                    aviso: tutor.hijos.length === 0 && "Este tutor todavía no tiene hijos vinculados: al entrar no verá a ningún alumno.",
+                });
             } catch (e) {
                 mostrarAvisoForm(e.message);
             }
@@ -381,54 +384,6 @@ export function vistaTutores(contenedor) {
 
 function filaMensaje(texto) {
     return el("tr", {}, el("td", { class: "vacio", colspan: 6 }, texto));
-}
-
-function etiquetaCuenta(estado) {
-    if (estado === "CuentaActiva") return el("span", { class: "etiqueta ok" }, "Cuenta activa");
-    if (estado === "InvitacionPendiente") return el("span", { class: "etiqueta alerta" }, "Invitación pendiente");
-    return el("span", { class: "etiqueta neutra" }, "Sin invitar");
-}
-
-/**
- * Hoja de invitación lista para imprimir. El código solo se ve aquí:
- * la API no lo guarda en claro, así que al cerrar ya no se puede volver a consultar.
- */
-function mostrarInvitacion(inv, tieneHijos) {
-    const vence = new Date(inv.expira).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
-    const direccion = location.origin;
-
-    const cerrar = () => {
-        document.body.classList.remove("con-impresion");
-        zona.remove();
-    };
-    const zona = el("div", { class: "zona-impresion", role: "dialog", "aria-modal": "true", "aria-labelledby": "inv-titulo" },
-        el("div", { class: "invitacion" },
-            el("div", { class: "invitacion-marca" }, logo(30), "SafeBand"),
-            el("h2", { id: "inv-titulo" }, "Invitación para crear tu cuenta"),
-            el("p", {}, `Para: ${inv.tutor}`),
-            el("p", { class: "invitacion-etiqueta" }, "Tu código"),
-            el("p", { class: "invitacion-codigo" }, inv.codigo),
-            el("p", { class: "invitacion-vence" }, `Sirve una sola vez. Vence el ${vence}.`),
-            el("ol", { class: "invitacion-pasos" },
-                el("li", {}, "Entra a ", el("strong", {}, direccion), " desde tu celular o computadora."),
-                el("li", {}, "Elige «Crear mi cuenta»."),
-                el("li", {}, "Escribe tu correo ", el("strong", {}, inv.email), ", este código y una contraseña nueva."),
-                el("li", {}, "Lee y acepta el aviso de privacidad.")),
-            el("p", { class: "invitacion-nota" },
-                "Con tu cuenta podrás ver en qué zona de la escuela está tu hijo o hija y recibir avisos. ",
-                "No compartas este código: es personal."),
-            !tieneHijos && el("div", { class: "aviso aviso-info no-imprimir" },
-                "Este tutor todavía no tiene hijos vinculados: al entrar no verá a ningún alumno."),
-            el("div", { class: "invitacion-botones no-imprimir" },
-                el("button", { type: "button", class: "boton boton-sutil", onclick: cerrar }, "Cerrar"),
-                el("button", { type: "button", class: "boton boton-primario", onclick: () => window.print() }, "Imprimir")),
-            el("p", { class: "ayuda-campo no-imprimir" },
-                "Este código no se podrá volver a ver al cerrar esta ventana. Si se pierde, genera uno nuevo.")));
-
-    zona.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(); });
-    document.body.classList.add("con-impresion");
-    document.body.append(zona);
-    zona.querySelector(".boton-primario").focus();
 }
 
 function nombreCompleto(t) {

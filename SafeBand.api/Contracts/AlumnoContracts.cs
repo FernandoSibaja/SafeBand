@@ -25,7 +25,10 @@ public record GuardarAlumnoRequest(
     string? Matricula = null,
 
     // Pulsera que debe tener el alumno. null = sin pulsera (si tenía una, queda libre).
-    int? PulseraId = null);
+    int? PulseraId = null,
+
+    // Grupo escolar. null = sin grupo.
+    int? GrupoId = null);
 
 /// <summary>La pulsera activa de un alumno (solo puede tener una).</summary>
 public record PulseraResumen(int Id, string IdentificadorBle);
@@ -40,4 +43,5 @@ public record AlumnoResponse(
     string? Matricula,
     bool Activo,
     DateTime FechaAlta,
-    PulseraResumen? Pulsera);
+    PulseraResumen? Pulsera,
+    GrupoResumen? Grupo);

@@ -15,6 +15,10 @@ public class Alumno
     public bool Activo { get; set; } = true;
     public DateTime FechaAlta { get; set; }
 
+    // Relación: el grupo escolar donde está (3°A...). null = todavía sin grupo
+    public int? GrupoId { get; set; }
+    public Grupo? Grupo { get; set; }
+
     // Relación: un alumno puede tener varias pulseras a lo largo del tiempo (si pierde una, se le da otra)
     public List<Pulsera> Pulseras { get; set; } = [];
 

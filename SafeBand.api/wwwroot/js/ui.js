@@ -196,6 +196,8 @@ const ICONOS = {
     pulseras: '<circle cx="12" cy="12" r="7"/><circle cx="12" cy="12" r="2.5"/>',
     tutores: '<circle cx="8.5" cy="8.5" r="3"/><circle cx="16.5" cy="10" r="2.5"/><path d="M3 19c.6-3 2.8-4.6 5.5-4.6S13.4 16 14 19M14.5 15c2.6-.4 5 .9 5.8 4"/>',
     zonas: '<path d="M4 5h7v6H4zM13 5h7v14h-7zM4 13h7v6H4z"/>',
+    grupos: '<circle cx="12" cy="7.5" r="2.5"/><circle cx="6" cy="10" r="2"/><circle cx="18" cy="10" r="2"/><path d="M8 19c.4-2.8 1.9-4.4 4-4.4s3.6 1.6 4 4.4M2.5 18c.3-2 1.6-3.2 3.5-3.2M21.5 18c-.3-2-1.6-3.2-3.5-3.2"/>',
+    personal: '<circle cx="12" cy="7.5" r="3"/><path d="M5.5 20c.6-3.4 3.2-5.4 6.5-5.4s5.9 2 6.5 5.4M10.5 14.8 12 17l1.5-2.2"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     salir: '<path d="M14 5h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/>',
     mas: '<path d="M12 5v14M5 12h14"/>',
@@ -229,4 +231,52 @@ export function logo(tam = 28) {
         '<circle cx="16" cy="16" r="9.5" fill="none" stroke="#1D5FC2" stroke-width="2" opacity=".55"/>' +
         '<circle cx="16" cy="16" r="14" fill="none" stroke="#1D5FC2" stroke-width="2" opacity=".25"/>';
     return svg;
+}
+
+/** Etiqueta del estado de la cuenta en la app (tutores y personal). */
+export function etiquetaCuenta(estado) {
+    if (estado === "CuentaActiva") return el("span", { class: "etiqueta ok" }, "Cuenta activa");
+    if (estado === "InvitacionPendiente") return el("span", { class: "etiqueta alerta" }, "Invitación pendiente");
+    return el("span", { class: "etiqueta neutra" }, "Sin invitar");
+}
+
+/**
+ * Hoja de invitación lista para imprimir. El código solo se ve aquí:
+ * la API no lo guarda en claro, así que al cerrar ya no se puede volver a consultar.
+ * La usan Tutores (padres) y Personal (maestros y administradores).
+ * - nota: para qué sirve la cuenta (se imprime). - aviso: advertencia solo en pantalla.
+ */
+export function mostrarInvitacion(inv, { nota = "", aviso = null, titulo = "Invitación para crear tu cuenta" } = {}) {
+    const vence = new Date(inv.expira).toLocaleDateString("es-MX", { day: "numeric", month: "long", year: "numeric" });
+    const direccion = location.origin;
+
+    const cerrar = () => {
+        document.body.classList.remove("con-impresion");
+        zona.remove();
+    };
+    const zona = el("div", { class: "zona-impresion", role: "dialog", "aria-modal": "true", "aria-labelledby": "inv-titulo" },
+        el("div", { class: "invitacion" },
+            el("div", { class: "invitacion-marca" }, logo(30), "SafeBand"),
+            el("h2", { id: "inv-titulo" }, titulo),
+            el("p", {}, `Para: ${inv.tutor}`),
+            el("p", { class: "invitacion-etiqueta" }, "Tu código"),
+            el("p", { class: "invitacion-codigo" }, inv.codigo),
+            el("p", { class: "invitacion-vence" }, `Sirve una sola vez. Vence el ${vence}.`),
+            el("ol", { class: "invitacion-pasos" },
+                el("li", {}, "Entra a ", el("strong", {}, direccion), " desde tu celular o computadora."),
+                el("li", {}, "Elige «Crear mi cuenta»."),
+                el("li", {}, "Escribe tu correo ", el("strong", {}, inv.email), ", este código y una contraseña nueva."),
+                el("li", {}, "Lee y acepta el aviso de privacidad.")),
+            el("p", { class: "invitacion-nota" }, nota, "No compartas este código: es personal."),
+            aviso && el("div", { class: "aviso aviso-info no-imprimir" }, aviso),
+            el("div", { class: "invitacion-botones no-imprimir" },
+                el("button", { type: "button", class: "boton boton-sutil", onclick: cerrar }, "Cerrar"),
+                el("button", { type: "button", class: "boton boton-primario", onclick: () => window.print() }, "Imprimir")),
+            el("p", { class: "ayuda-campo no-imprimir" },
+                "Este código no se podrá volver a ver al cerrar esta ventana. Si se pierde, genera uno nuevo.")));
+
+    zona.addEventListener("keydown", (e) => { if (e.key === "Escape") cerrar(); });
+    document.body.classList.add("con-impresion");
+    document.body.append(zona);
+    zona.querySelector(".boton-primario").focus();
 }

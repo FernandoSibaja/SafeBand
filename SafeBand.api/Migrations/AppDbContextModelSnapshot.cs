@@ -181,6 +181,9 @@ namespace SafeBand.api.Migrations
                     b.Property<DateOnly?>("FechaNacimiento")
                         .HasColumnType("date");
 
+                    b.Property<int?>("GrupoId")
+                        .HasColumnType("int");
+
                     b.Property<string>("Matricula")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
@@ -192,11 +195,47 @@ namespace SafeBand.api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("GrupoId");
+
                     b.HasIndex("Matricula")
                         .IsUnique()
                         .HasFilter("[Matricula] IS NOT NULL");
 
                     b.ToTable("Alumnos");
+                });
+
+            modelBuilder.Entity("SafeBand.api.Models.Grupo", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<bool>("Activo")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("MaestroId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<int?>("ZonaId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("MaestroId");
+
+                    b.HasIndex("Nombre")
+                        .IsUnique();
+
+                    b.HasIndex("ZonaId");
+
+                    b.ToTable("Grupos");
                 });
 
             modelBuilder.Entity("SafeBand.api.Models.Invitacion", b =>
@@ -218,17 +257,25 @@ namespace SafeBand.api.Migrations
                     b.Property<DateTime>("Expira")
                         .HasColumnType("datetime2");
 
-                    b.Property<int>("TutorId")
+                    b.Property<int?>("TutorId")
                         .HasColumnType("int");
 
                     b.Property<DateTime?>("UsadaEn")
                         .HasColumnType("datetime2");
 
+                    b.Property<string>("UsuarioId")
+                        .HasColumnType("nvarchar(450)");
+
                     b.HasKey("Id");
 
                     b.HasIndex("TutorId");
 
-                    b.ToTable("Invitaciones", (string)null);
+                    b.HasIndex("UsuarioId");
+
+                    b.ToTable("Invitaciones", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_Invitaciones_TutorOUsuario", "([TutorId] IS NULL AND [UsuarioId] IS NOT NULL) OR ([TutorId] IS NOT NULL AND [UsuarioId] IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("SafeBand.api.Models.LecturaBle", b =>
@@ -619,15 +666,48 @@ namespace SafeBand.api.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("SafeBand.api.Models.Alumno", b =>
+                {
+                    b.HasOne("SafeBand.api.Models.Grupo", "Grupo")
+                        .WithMany("Alumnos")
+                        .HasForeignKey("GrupoId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Grupo");
+                });
+
+            modelBuilder.Entity("SafeBand.api.Models.Grupo", b =>
+                {
+                    b.HasOne("SafeBand.api.Models.Usuario", "Maestro")
+                        .WithMany()
+                        .HasForeignKey("MaestroId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("SafeBand.api.Models.Zona", "Zona")
+                        .WithMany()
+                        .HasForeignKey("ZonaId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Maestro");
+
+                    b.Navigation("Zona");
+                });
+
             modelBuilder.Entity("SafeBand.api.Models.Invitacion", b =>
                 {
                     b.HasOne("SafeBand.api.Models.Tutor", "Tutor")
                         .WithMany("Invitaciones")
                         .HasForeignKey("TutorId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
+                        .OnDelete(DeleteBehavior.Cascade);
+
+                    b.HasOne("SafeBand.api.Models.Usuario", "Usuario")
+                        .WithMany()
+                        .HasForeignKey("UsuarioId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Tutor");
+
+                    b.Navigation("Usuario");
                 });
 
             modelBuilder.Entity("SafeBand.api.Models.LecturaBle", b =>
@@ -711,6 +791,11 @@ namespace SafeBand.api.Migrations
                     b.Navigation("Pulseras");
 
                     b.Navigation("Tutores");
+                });
+
+            modelBuilder.Entity("SafeBand.api.Models.Grupo", b =>
+                {
+                    b.Navigation("Alumnos");
                 });
 
             modelBuilder.Entity("SafeBand.api.Models.Tutor", b =>

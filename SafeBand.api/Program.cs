@@ -72,7 +72,8 @@ builder.Services.ConfigureApplicationCookie(o =>
 builder.Services.AddAuthorizationBuilder()
     .AddPolicy(Politicas.SoloAdministrador, p => p.RequireRole(Roles.Administrador))
     .AddPolicy(Politicas.Personal, p => p.RequireRole(Roles.Administrador, Roles.Maestro))
-    .AddPolicy(Politicas.SoloPadre, p => p.RequireRole(Roles.Padre));
+    .AddPolicy(Politicas.SoloPadre, p => p.RequireRole(Roles.Padre))
+    .AddPolicy(Politicas.SoloMaestro, p => p.RequireRole(Roles.Maestro));
 
 // Límite de intentos en login y registro: 10 por minuto por dirección IP.
 // Frena a quien intente adivinar contraseñas o códigos de invitación probando muchos.
@@ -158,9 +159,13 @@ app.UseRateLimiter();
 app.MapAuth();       // /api/auth      (Endpoints/AuthEndpoints.cs)
 app.MapLecturas();   // /api/lecturas  (Endpoints/LecturasEndpoints.cs)
 app.MapAlumnos();    // /api/alumnos   (Endpoints/AlumnosEndpoints.cs)
+app.MapGrupos();     // /api/grupos    (Endpoints/GruposEndpoints.cs)
+app.MapPersonal();   // /api/personal  (Endpoints/PersonalEndpoints.cs) — cuentas de maestros y administradores
 app.MapPulseras();   // /api/pulseras  (Endpoints/PulserasEndpoints.cs)
 app.MapTutores();    // /api/tutores   (Endpoints/TutoresEndpoints.cs)
 app.MapZonasNodos(); // /api/zonas y /api/nodos (Endpoints/ZonasNodosEndpoints.cs)
 app.MapMisHijos();   // /api/mis-hijos (Endpoints/MisHijosEndpoints.cs) — vista del padre
+app.MapMiGrupo();    // /api/mi-grupo  (Endpoints/MiGrupoEndpoints.cs) — vista del maestro
+app.MapEscuela();    // /api/escuela   (Endpoints/EscuelaEndpoints.cs) — panel del director
 
 app.Run();

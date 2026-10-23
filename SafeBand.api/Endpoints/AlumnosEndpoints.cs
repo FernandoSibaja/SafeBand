@@ -52,6 +52,7 @@ public static class AlumnosEndpoints
 
         var (pulsera, error) = await ValidarPulsera(db, req.PulseraId, alumnoId: null);
         if (error is not null) return error;
+        if (await ValidarGrupo(db, req.GrupoId) is { } errorGrupo) return errorGrupo;
 
         var alumno = new Alumno { FechaAlta = DateTime.UtcNow };
         Aplicar(alumno, req, matricula);
@@ -80,6 +81,7 @@ public static class AlumnosEndpoints
 
         var (nueva, error) = await ValidarPulsera(db, req.PulseraId, alumnoId: id);
         if (error is not null) return error;
+        if (alumno.GrupoId != req.GrupoId && await ValidarGrupo(db, req.GrupoId) is { } errorGrupo) return errorGrupo;
 
         Aplicar(alumno, req, matricula);
 
@@ -141,6 +143,12 @@ public static class AlumnosEndpoints
         return (p, null);
     }
 
+    /// <summary>Que el grupo elegido exista y esté activo.</summary>
+    private static async Task<IResult?> ValidarGrupo(AppDbContext db, int? grupoId) =>
+        grupoId is null || await db.Grupos.AnyAsync(g => g.Id == grupoId && g.Activo)
+            ? null
+            : Results.BadRequest(new { error = $"El grupo {grupoId} no existe o está dado de baja." });
+
     private static void Aplicar(Alumno alumno, GuardarAlumnoRequest req, string? matricula)
     {
         alumno.Nombres = req.Nombres!.Trim();
@@ -148,6 +156,7 @@ public static class AlumnosEndpoints
         alumno.ApellidoMaterno = Limpiar(req.ApellidoMaterno);
         alumno.FechaNacimiento = req.FechaNacimiento;
         alumno.Matricula = matricula;
+        alumno.GrupoId = req.GrupoId;
     }
 
     // Quita espacios; si queda vacío, lo guarda como null
@@ -161,5 +170,6 @@ public static class AlumnosEndpoints
             DateTime.SpecifyKind(a.FechaAlta, DateTimeKind.Utc),
             a.Pulseras.Where(p => p.Activa)
                 .Select(p => new PulseraResumen(p.Id, p.IdentificadorBle))
-                .FirstOrDefault()));
+                .FirstOrDefault(),
+            a.Grupo == null ? null : new GrupoResumen(a.Grupo.Id, a.Grupo.Nombre)));
 }

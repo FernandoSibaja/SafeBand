@@ -15,10 +15,10 @@ public static class LecturasEndpoints
         // POST: TEMPORALMENTE ABIERTO. Lo usan los ESP32, que no inician sesión → se protegerá con una clave por nodo (paso 6).
         grupo.MapPost("/", Crear).AllowAnonymous().WithSummary("Guarda una lectura enviada por un nodo ESP32");
 
-        // GET: todas las lecturas de todos los niños → solo personal de la escuela.
-        // Los padres usan /api/mis-hijos, que solo devuelve a sus hijos.
-        grupo.MapGet("/", Listar).RequireAuthorization(Politicas.Personal)
-            .WithSummary("Últimas lecturas de toda la escuela (?limit=1 = la más reciente). Solo Administrador o Maestro");
+        // GET: todas las lecturas de todos los niños → solo Administrador.
+        // Los padres usan /api/mis-hijos (solo sus hijos) y los maestros /api/mi-grupo (solo sus grupos).
+        grupo.MapGet("/", Listar).RequireAuthorization(Politicas.SoloAdministrador)   // lecturas de TODA la escuela: el maestro usa /api/mi-grupo
+            .WithSummary("Últimas lecturas de toda la escuela (?limit=1 = la más reciente). Solo Administrador");
     }
 
     // POST /api/lecturas

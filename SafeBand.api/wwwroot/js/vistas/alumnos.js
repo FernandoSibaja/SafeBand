@@ -2,9 +2,9 @@
 // Pantalla "Alumnos" (solo Administrador)
 // - Lista con búsqueda y opción de ver los dados de baja.
 // - Formulario en un panel lateral para agregar o editar,
-//   incluida la pulsera del alumno (libre existente o una nueva).
+//   incluidos su grupo y su pulsera (libre existente o una nueva).
 // - Dar de baja (con confirmación) y reactivar.
-// API: /api/alumnos, /api/pulseras?sinAsignar=true, POST /api/pulseras
+// API: /api/alumnos, /api/grupos, /api/pulseras?sinAsignar=true, POST /api/pulseras
 // ============================================================
 
 import { api } from "../api.js";
@@ -30,7 +30,7 @@ export function vistaAlumnos(contenedor) {
         aviso,
         el("div", { class: "herramientas" },
             el("input", {
-                type: "search", class: "buscador", placeholder: "Buscar por nombre o matrícula",
+                type: "search", class: "buscador", placeholder: "Buscar por nombre, matrícula o grupo",
                 "aria-label": "Buscar alumno",
                 oninput: (e) => { filtro = e.target.value; dibujarTabla(); },
             }),
@@ -41,6 +41,7 @@ export function vistaAlumnos(contenedor) {
             el("table", { class: "tabla-tarjetas" },
                 el("thead", {}, el("tr", {},
                     el("th", { scope: "col" }, "Nombre"),
+                    el("th", { scope: "col" }, "Grupo"),
                     el("th", { scope: "col" }, "Matrícula"),
                     el("th", { scope: "col" }, "Edad"),
                     el("th", { scope: "col" }, "Pulsera"),
@@ -71,7 +72,7 @@ export function vistaAlumnos(contenedor) {
         }
         const texto = normalizar(filtro);
         const visibles = alumnos.filter((a) => !texto ||
-            normalizar(`${a.nombres} ${a.apellidoPaterno} ${a.apellidoMaterno ?? ""} ${a.matricula ?? ""}`).includes(texto));
+            normalizar(`${a.nombres} ${a.apellidoPaterno} ${a.apellidoMaterno ?? ""} ${a.matricula ?? ""} ${a.grupo?.nombre ?? ""}`).includes(texto));
         if (visibles.length === 0) {
             cuerpo.replaceChildren(filaMensaje(`Ningún alumno coincide con «${filtro}».`));
             return;
@@ -85,6 +86,7 @@ export function vistaAlumnos(contenedor) {
             el("td", { class: "principal" },
                 nombreCompleto(a),
                 !a.activo && el("span", { class: "etiqueta neutra", style: "margin-left:8px" }, "Dado de baja")),
+            el("td", { "data-etiqueta": "Grupo" }, a.grupo?.nombre ?? el("span", { class: "secundario" }, "Sin grupo")),
             el("td", { "data-etiqueta": "Matrícula" }, a.matricula ?? "—"),
             el("td", { "data-etiqueta": "Edad", class: "num" }, anios == null ? "—" : `${anios} años`),
             el("td", { "data-etiqueta": "Pulsera" },
@@ -113,6 +115,8 @@ export function vistaAlumnos(contenedor) {
             el("input", { id: "f-nacimiento", type: "date", max: new Date().toISOString().slice(0, 10), value: alumno?.fechaNacimiento ?? "" }), { opcional: true });
         const matricula = campo("f-matricula", "Matrícula", el("input", { id: "f-matricula", autocomplete: "off", value: alumno?.matricula ?? "" }),
             { opcional: true, ayuda: "El número que la escuela le asigna al alumno." });
+        const selectorGrupo = el("select", { id: "f-grupo" }, el("option", { value: "" }, "Cargando grupos…"));
+        const grupoCampo = campo("f-grupo", "Grupo", selectorGrupo, { opcional: true });
 
         const selector = el("select", { id: "f-pulsera" }, el("option", { value: "" }, "Cargando pulseras…"));
         const pulsera = campo("f-pulsera", "Pulsera", selector, { ancho: true });
@@ -135,7 +139,7 @@ export function vistaAlumnos(contenedor) {
             subtitulo: editando ? "Edita sus datos o cambia su pulsera." : "Sus datos y, si ya la tiene, su pulsera.",
             contenido: [
                 avisoForm,
-                el("div", { class: "grupo-campos" }, nombres.nodo, paterno.nodo, materno.nodo, nacimiento.nodo, matricula.nodo),
+                el("div", { class: "grupo-campos" }, nombres.nodo, paterno.nodo, materno.nodo, nacimiento.nodo, matricula.nodo, grupoCampo.nodo),
                 el("div", { class: "separador-form" },
                     el("h3", {}, "Pulsera"),
                     el("p", {}, "Solo aparecen las pulseras que no tiene otro alumno.")),
@@ -152,6 +156,14 @@ export function vistaAlumnos(contenedor) {
         });
         cerrarFormulario = cerrar;
         nombres.input.focus();
+
+        // Opciones del selector de grupo (los activos; si su grupo está dado de baja, también aparece)
+        api("/api/grupos?incluirInactivos=true").then((grupos) => {
+            const visibles = grupos.filter((g) => g.activo || g.id === alumno?.grupo?.id);
+            selectorGrupo.replaceChildren(el("option", { value: "" }, "Sin grupo"),
+                ...visibles.map((g) => el("option", { value: g.id }, g.activo ? g.nombre : `${g.nombre} (dado de baja)`)));
+            selectorGrupo.value = alumno?.grupo?.id ?? "";
+        }).catch((e) => mostrarAvisoForm(`No se pudieron cargar los grupos: ${e.message}`));
 
         // Opciones del selector de pulsera
         let libres = [];
@@ -204,6 +216,10 @@ export function vistaAlumnos(contenedor) {
                     fechaNacimiento: nacimiento.input.value || null,
                     matricula: matricula.input.value.trim() || null,
                     pulseraId,
+                    // Mientras cargan los grupos se conserva el que tenía
+                    grupoId: selectorGrupo.options.length > 1 || selectorGrupo.value === ""
+                        ? (selectorGrupo.value === "" ? null : Number(selectorGrupo.value))
+                        : alumno?.grupo?.id ?? null,
                 };
                 if (editando) await api(`/api/alumnos/${alumno.id}`, { metodo: "PUT", cuerpo: datos });
                 else await api("/api/alumnos", { metodo: "POST", cuerpo: datos });
@@ -256,7 +272,7 @@ export function vistaAlumnos(contenedor) {
         // La API responde { errors: { Nombres: [...] } } (validación) o { error: "..." } (reglas)
         const camposPorNombre = {
             nombres, apellidopaterno: paterno, apellidomaterno: materno,
-            fechanacimiento: nacimiento, matricula, pulseraid: pulsera, identificadorble: nueva,
+            fechanacimiento: nacimiento, matricula, pulseraid: pulsera, identificadorble: nueva, grupoid: grupoCampo,
         };
 
         function mostrarErrores(e) {
@@ -275,6 +291,8 @@ export function vistaAlumnos(contenedor) {
             if (/matr[ií]cula/i.test(e.message)) {
                 matricula.ponerError(e.message);
                 matricula.input.focus();
+            } else if (/grupo/i.test(e.message)) {
+                grupoCampo.ponerError(e.message);
             } else if (/pulsera/i.test(e.message)) {
                 (selector.value === OPCION_NUEVA ? nueva : pulsera).ponerError(e.message);
             } else {
@@ -289,7 +307,7 @@ export function vistaAlumnos(contenedor) {
 
         function limpiarErrores() {
             avisoForm.hidden = true;
-            for (const c of [nombres, paterno, materno, nacimiento, matricula, pulsera, nueva]) c.limpiar();
+            for (const c of [nombres, paterno, materno, nacimiento, matricula, grupoCampo, pulsera, nueva]) c.limpiar();
         }
     }
 
@@ -302,7 +320,7 @@ export function vistaAlumnos(contenedor) {
 // ---------- Ayudantes de esta pantalla ----------
 
 function filaMensaje(texto) {
-    return el("tr", {}, el("td", { class: "vacio", colspan: 5 }, texto));
+    return el("tr", {}, el("td", { class: "vacio", colspan: 6 }, texto));
 }
 
 function nombreCompleto(a) {

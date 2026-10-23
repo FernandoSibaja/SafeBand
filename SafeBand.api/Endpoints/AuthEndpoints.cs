@@ -24,7 +24,7 @@ public static class AuthEndpoints
         grupo.MapPost("/login", Login).RequireRateLimiting("auth")
             .WithSummary("Inicia sesión con correo y contraseña (deja la cookie de sesión)");
         grupo.MapPost("/registro", Registro).RequireRateLimiting("auth")
-            .WithSummary("Un padre crea su cuenta con el código de invitación que le dio la escuela");
+            .WithSummary("Un padre crea su cuenta (o alguien del personal activa la suya) con el código de invitación de la escuela");
         grupo.MapPost("/logout", Logout).WithSummary("Cierra la sesión (borra la cookie)");
         grupo.MapGet("/yo", QuienSoy).RequireAuthorization().WithSummary("Datos y roles del usuario con sesión iniciada");
     }
@@ -41,6 +41,15 @@ public static class AuthEndpoints
             return Results.BadRequest(new { error = "Para crear tu cuenta debes aceptar el aviso de privacidad." });
 
         var email = req.Email!.Trim().ToLowerInvariant();
+
+        // 0. ¿Es alguien del personal con una invitación vigente? Activa su cuenta (ya creada) poniendo su contraseña
+        var personal = await ActivarPersonal(email, req, db, usuarios);
+        if (personal.Resultado is not null) return personal.Resultado;
+        if (personal.Usuario is not null)
+        {
+            await sesion.SignInAsync(personal.Usuario, isPersistent: true);
+            return Results.Created("/api/auth/yo", await Describir(personal.Usuario, usuarios));
+        }
 
         // 1. El correo debe ser el de un tutor activo que la escuela registró
         var tutor = await db.Tutores.FirstOrDefaultAsync(t => t.Email == email && t.Activo);
@@ -86,6 +95,46 @@ public static class AuthEndpoints
         // 5. Entra directo a la app
         await sesion.SignInAsync(usuario, isPersistent: true);
         return Results.Created("/api/auth/yo", await Describir(usuario, usuarios));
+    }
+
+    /// <summary>
+    /// Si el correo es de una cuenta activa del personal y el código coincide con su invitación vigente,
+    /// le pone la contraseña (nueva o en lugar de la anterior) y marca el código como usado.
+    /// Devuelve (null, null) si no aplica, para seguir con el registro de padres.
+    /// </summary>
+    private static async Task<(Usuario? Usuario, IResult? Resultado)> ActivarPersonal(
+        string email, RegistroRequest req, AppDbContext db, UserManager<Usuario> usuarios)
+    {
+        var usuario = await usuarios.FindByEmailAsync(email);
+        if (usuario is null || !usuario.Activo || usuario.TutorId is not null) return (null, null);
+
+        var ahora = DateTime.UtcNow;
+        var pendientes = await db.Invitaciones
+            .Where(i => i.UsuarioId == usuario.Id && i.UsadaEn == null && i.Expira > ahora)
+            .ToListAsync();
+        var invitacion = pendientes.FirstOrDefault(i => CodigosInvitacion.Verificar(i, req.Codigo!));
+        if (invitacion is null) return (null, Results.BadRequest(new { error = InvitacionInvalida }));
+
+        // Validar la contraseña ANTES de quitar la anterior (para no dejar la cuenta sin contraseña)
+        foreach (var validador in usuarios.PasswordValidators)
+        {
+            var v = await validador.ValidateAsync(usuarios, usuario, req.Password!);
+            if (!v.Succeeded)
+                return (null, Results.BadRequest(new { error = string.Join(" ", v.Errors.Select(e => e.Description)) }));
+        }
+        if (await usuarios.HasPasswordAsync(usuario)) await usuarios.RemovePasswordAsync(usuario);
+        var puesta = await usuarios.AddPasswordAsync(usuario, req.Password!);
+        if (!puesta.Succeeded)
+            return (null, Results.BadRequest(new { error = string.Join(" ", puesta.Errors.Select(e => e.Description)) }));
+
+        await usuarios.SetLockoutEndDateAsync(usuario, null);   // si estaba bloqueada por intentos, se desbloquea
+        await usuarios.ResetAccessFailedCountAsync(usuario);
+        usuario.AvisoPrivacidadAceptado ??= ahora;
+        await usuarios.UpdateAsync(usuario);
+
+        invitacion.UsadaEn = ahora;
+        await db.SaveChangesAsync();
+        return (usuario, null);
     }
 
     // POST /api/auth/login

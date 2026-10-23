@@ -15,6 +15,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<Zona> Zonas => Set<Zona>();
     public DbSet<Nodo> Nodos => Set<Nodo>();
     public DbSet<Alumno> Alumnos => Set<Alumno>();
+    public DbSet<Grupo> Grupos => Set<Grupo>();
     public DbSet<Tutor> Tutores => Set<Tutor>();
     public DbSet<TutorAlumno> TutoresAlumnos => Set<TutorAlumno>();
     public DbSet<Invitacion> Invitaciones => Set<Invitacion>();
@@ -64,6 +65,20 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             e.HasIndex(a => a.Matricula).IsUnique().HasFilter("[Matricula] IS NOT NULL");
         });
 
+        modelBuilder.Entity<Grupo>(e =>
+        {
+            e.Property(g => g.Nombre).HasMaxLength(50);
+            e.HasIndex(g => g.Nombre).IsUnique();
+            // Si desaparece el salón o la cuenta del maestro, el grupo queda sin ellos (no se borra)
+            e.HasOne(g => g.Zona).WithMany().HasForeignKey(g => g.ZonaId)
+                .OnDelete(DeleteBehavior.SetNull);
+            e.HasOne(g => g.Maestro).WithMany().HasForeignKey(g => g.MaestroId)
+                .OnDelete(DeleteBehavior.SetNull);
+            // Si se borra un grupo, sus alumnos quedan sin grupo
+            e.HasMany(g => g.Alumnos).WithOne(a => a.Grupo).HasForeignKey(a => a.GrupoId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
         modelBuilder.Entity<Tutor>(e =>
         {
             e.Property(t => t.Nombres).HasMaxLength(100);
@@ -80,6 +95,12 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             e.Property(i => i.CodigoHash).HasMaxLength(200);
             e.HasOne(i => i.Tutor).WithMany(t => t.Invitaciones).HasForeignKey(i => i.TutorId)
                 .OnDelete(DeleteBehavior.Cascade);
+            // Restrict: SQL Server no permite dos caminos de borrado en cascada (Tutor → Usuario → Invitación)
+            e.HasOne(i => i.Usuario).WithMany().HasForeignKey(i => i.UsuarioId)
+                .OnDelete(DeleteBehavior.Restrict);
+            // Es de un tutor o de alguien del personal, nunca de los dos ni de ninguno
+            e.ToTable(t => t.HasCheckConstraint("CK_Invitaciones_TutorOUsuario",
+                "([TutorId] IS NULL AND [UsuarioId] IS NOT NULL) OR ([TutorId] IS NOT NULL AND [UsuarioId] IS NULL)"));
         });
 
         modelBuilder.Entity<TutorAlumno>(e =>
