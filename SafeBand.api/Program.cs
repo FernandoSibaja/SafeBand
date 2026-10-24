@@ -1,3 +1,4 @@
+using SafeBand.api.Servicios;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.DataProtection;
@@ -91,6 +92,10 @@ builder.Services.AddRateLimiter(o =>
 });
 
 // Validación automática de los [Required], [Range]... de los contratos (Contracts/)
+// Bot de Telegram para los avisos (el token va en user-secrets / appsettings.Production.json).
+// Los logs de HttpClient están en Warning (appsettings.json) para que la URL con el token nunca se escriba.
+builder.Services.AddHttpClient<TelegramServicio>(c => c.Timeout = TimeSpan.FromSeconds(8));
+
 builder.Services.AddProblemDetails();
 builder.Services.AddValidation();
 
@@ -167,5 +172,8 @@ app.MapZonasNodos(); // /api/zonas y /api/nodos (Endpoints/ZonasNodosEndpoints.c
 app.MapMisHijos();   // /api/mis-hijos (Endpoints/MisHijosEndpoints.cs) — vista del padre
 app.MapMiGrupo();    // /api/mi-grupo  (Endpoints/MiGrupoEndpoints.cs) — vista del maestro
 app.MapEscuela();    // /api/escuela   (Endpoints/EscuelaEndpoints.cs) — panel del director
+app.MapAlertas();    // /api/alertas   (Endpoints/AlertasEndpoints.cs) — SOS
+app.MapDatosEscuela(); // /api/datos-escuela (Endpoints/DatosEscuelaEndpoints.cs) — nombre y teléfono
+app.MapTelegram();   // /api/telegram  (Endpoints/TelegramEndpoints.cs) — vincular avisos por Telegram
 
 app.Run();

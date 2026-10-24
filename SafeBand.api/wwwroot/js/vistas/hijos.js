@@ -5,7 +5,7 @@
 // ============================================================
 
 import { api } from "../api.js";
-import { el, hora, haceCuanto, fechaHora, esReciente } from "../ui.js";
+import { el, hora, haceCuanto, fechaHora, esReciente, avisoBreve, confirmar } from "../ui.js";
 import { dibujarPlano } from "../plano.js";
 
 const INTERVALO_MS = 10000;
@@ -23,10 +23,13 @@ export function vistaHijos(contenedor) {
                 el("p", { class: "sub" }, "Dónde se detectó su pulsera dentro de la escuela. Se actualiza solo.")),
             indicador),
         aviso,
+        tarjetaTelegram(),
         lista);
 
     let detenido = false;
     let plano = null;   // { ancho, alto, zonas }; null mientras no se haya podido cargar
+    let escuela = null; // { nombre, telefono } para "Llamar a la escuela"
+    let alertas = [];   // SOS activos de sus hijos (hora y lugar donde lo pidió)
 
     async function cargar() {
         // "Hoy" según la hora del celular del padre: desde la medianoche local
@@ -35,11 +38,15 @@ export function vistaHijos(contenedor) {
         try {
             // El plano casi nunca cambia: se pide hasta conseguirlo y luego se reutiliza.
             // Si falla, las tarjetas se muestran solo con texto.
-            const [hijos, planoNuevo] = await Promise.all([
+            const [hijos, planoNuevo, escuelaNueva, alertasNuevas] = await Promise.all([
                 api(`/api/mis-hijos?desde=${encodeURIComponent(medianoche.toISOString())}`),
                 plano ? plano : api("/api/plano").catch(() => null),
+                escuela ? escuela : api("/api/datos-escuela").catch(() => null),
+                api("/api/alertas?activas=true").catch(() => alertas),
             ]);
             plano = planoNuevo;
+            escuela = escuelaNueva;
+            alertas = alertasNuevas;
             if (detenido) return;
             aviso.hidden = true;
             indicador.classList.remove("desconectado");
@@ -61,7 +68,7 @@ export function vistaHijos(contenedor) {
                 "La escuela debe agregarte como tutor de tus hijos. Si crees que es un error, comunícate con la escuela."));
             return;
         }
-        lista.replaceChildren(...hijos.map((h) => tarjeta(h, plano)));
+        lista.replaceChildren(...hijos.map((h) => tarjeta(h, plano, alertas.find((a) => a.alumnoId === h.alumnoId), escuela)));
     }
 
     cargar();
@@ -69,7 +76,7 @@ export function vistaHijos(contenedor) {
     return () => { detenido = true; clearInterval(temporizador); };
 }
 
-function tarjeta(h, plano) {
+function tarjeta(h, plano, alertaSos, escuela) {
     const u = h.ultima;
     const reciente = u && (Date.now() - new Date(u.timestamp).getTime()) / 60000 < MINUTOS_RECIENTE;
 
@@ -82,7 +89,14 @@ function tarjeta(h, plano) {
 
         // Lo más importante primero: ¿pidió ayuda?
         u?.sos && el("div", { class: "alerta-sos", role: "alert" },
-            el("strong", {}, "SOS activado. "), `Presionó el botón de ayuda ${haceCuanto(u.timestamp)}. La escuela también recibe este aviso.`),
+            el("p", {},
+                el("strong", {}, "Pidió ayuda (SOS). "),
+                alertaSos
+                    ? `Presionó el botón a las ${hora(alertaSos.inicio)} (${haceCuanto(alertaSos.inicio)})${alertaSos.zona ? ` en ${alertaSos.zona}` : ""}. `
+                    : `Presionó el botón ${haceCuanto(u.timestamp)}. `,
+                "La escuela ya recibió el aviso y lo está verificando."),
+            escuela?.telefono && el("a", { class: "boton boton-blanco", href: `tel:${escuela.telefono.replace(/[^0-9+]/g, "")}` },
+                `Llamar a la escuela · ${escuela.telefono}`)),
 
         el("div", { class: "hijo-ahora" },
             !u
@@ -110,6 +124,69 @@ function tarjeta(h, plano) {
                 : el("ol", {}, h.recorrido.map((t) => el("li", {},
                     el("span", { class: "recorrido-hora" }, rango(t)),
                     el("span", {}, t.zona))))));
+}
+
+// ---------- Avisos por Telegram ----------
+// El padre vincula su cuenta una vez: la API da un enlace t.me/<bot>?start=<código>; al tocar «Iniciar»
+// en Telegram, la página pregunta cada 3 s hasta que la API confirma. Después le llega un mensaje con cada SOS.
+function tarjetaTelegram() {
+    const caja = el("section", { class: "telegram-tarjeta", "aria-label": "Avisos por Telegram", hidden: true });
+    let esperando = null;
+
+    async function mostrar() {
+        let estado;
+        try { estado = await api("/api/telegram"); } catch { return; }
+        if (!estado.disponible) { caja.hidden = true; return; }
+        caja.hidden = false;
+        if (estado.vinculado) {
+            caja.replaceChildren(
+                el("p", {}, el("strong", {}, "Recibes avisos por Telegram. "), "Te llegará un mensaje si alguno de tus hijos pide ayuda."),
+                el("button", { type: "button", class: "boton boton-sutil", onclick: desvincular }, "Dejar de recibirlos"));
+        } else {
+            caja.replaceChildren(
+                el("p", {}, el("strong", {}, "¿Quieres enterarte al momento? "), "Recibe un mensaje en Telegram si alguno de tus hijos pide ayuda (SOS)."),
+                el("button", { type: "button", class: "boton boton-primario", onclick: vincular }, "Recibir avisos por Telegram"));
+        }
+    }
+
+    async function vincular() {
+        let enlace;
+        try { enlace = await api("/api/telegram/vincular", { metodo: "POST" }); }
+        catch (e) { caja.replaceChildren(el("p", { class: "aviso aviso-error" }, e.message)); return; }
+        caja.replaceChildren(
+            el("p", {}, el("strong", {}, "1. "), "Abre Telegram con este botón y toca ", el("strong", {}, "«Iniciar»"), "."),
+            el("a", { class: "boton boton-primario", href: enlace.enlace, target: "_blank", rel: "noopener" }, "Abrir Telegram"),
+            el("p", { class: "secundario", role: "status" }, "2. Esperando a que toques «Iniciar»… (el enlace vence en 15 minutos)"),
+            el("button", { type: "button", class: "boton boton-enlace", onclick: cancelar }, "Cancelar"));
+        const hasta = new Date(enlace.expira).getTime();
+        esperando = setInterval(async () => {
+            if (Date.now() > hasta) { cancelar(); return; }
+            try {
+                const estado = await api("/api/telegram/revisar", { metodo: "POST" });
+                if (estado.vinculado) { cancelar(); avisoBreve("¡Listo! Ya recibes avisos por Telegram"); }
+            } catch { /* se reintenta en la siguiente vuelta */ }
+        }, 3000);
+    }
+
+    function cancelar() {
+        clearInterval(esperando);
+        esperando = null;
+        mostrar();
+    }
+
+    async function desvincular() {
+        const ok = await confirmar({
+            titulo: "¿Dejar de recibir avisos por Telegram?",
+            mensaje: "Si tu hijo pide ayuda, solo lo verás aquí en la página.",
+            aceptar: "Dejar de recibirlos",
+        });
+        if (!ok) return;
+        try { await api("/api/telegram", { metodo: "DELETE" }); } catch { /* igual se vuelve a pintar */ }
+        mostrar();
+    }
+
+    mostrar();
+    return caja;
 }
 
 // Plano de la última detección (null si la escuela no ha dibujado zonas). Según cómo la ubicó la API:

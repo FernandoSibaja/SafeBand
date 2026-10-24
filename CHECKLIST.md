@@ -27,6 +27,10 @@
 
 ## Seguridad y alertas
 - [ ] 9. Alertas: SOS, pulsera quitada, sin señal y salida sin recogida (la escuela las atiende, el padre las ve)
+  - [x] 9A. API del SOS: alerta abierta hasta desactivarla (pulsera o página; desde la página solo la escuela)
+  - [x] 9B. Pantallas: Alertas (escuela), SOS en Mis hijos con "Llamar a la escuela", datos de la escuela (teléfono)
+  - [ ] 9C. Firmware: mantener ~3 s para activar; volver a mantener para cancelar (bit3) — código listo y compilado; falta grabar y probar con el botón
+  - [ ] 9D. Avisos a todos los tutores por Telegram (@SafeBandOkulBot; se decidió sin correo)
 - [ ] 10. Clave por nodo (que nadie mande lecturas falsas)
 
 ## Terminales

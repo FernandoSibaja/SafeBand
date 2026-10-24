@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using SafeBand.api.Contracts;
 using SafeBand.api.Data;
 using SafeBand.api.Models;
+using SafeBand.api.Servicios;
 
 namespace SafeBand.api.Endpoints;
 
@@ -22,7 +23,8 @@ public static class LecturasEndpoints
     }
 
     // POST /api/lecturas
-    private static async Task<IResult> Crear(CrearLecturaRequest req, AppDbContext db)
+    private static async Task<IResult> Crear(CrearLecturaRequest req, AppDbContext db, HttpRequest http,
+        TelegramServicio telegram, IConfiguration config)
     {
         // 1. Buscar el nodo y la pulsera por su código (deben existir)
         var nodo = await db.Nodos.Include(n => n.Zona).FirstOrDefaultAsync(n => n.Codigo == req.Nodo);
@@ -57,7 +59,16 @@ public static class LecturasEndpoints
         nodo.UltimoContacto = ahora;
         pulsera.UltimaLectura = hora;
 
+        // Alertas: abrir un SOS o desactivarlo desde la pulsera (solo si la pulsera tiene dueño)
+        Alerta? sosNuevo = null;
+        if (pulsera.AlumnoId is int alumnoId)
+            sosNuevo = await Alertas.ProcesarLectura(db, alumnoId, nodo.ZonaId, req.Sos, req.SosCancelado, ahora);
+
         await db.SaveChangesAsync();
+
+        // SOS nuevo: avisar a todos sus tutores por Telegram (si falla, la lectura ya quedó guardada)
+        if (sosNuevo is not null)
+            await Avisos.Sos(db, telegram, config, sosNuevo, $"{http.Scheme}://{http.Host}/");
 
         // 4. Responder 201 Created con la lectura guardada
         var respuesta = new LecturaResponse(

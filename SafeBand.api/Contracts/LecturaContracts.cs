@@ -21,6 +21,9 @@ public record CrearLecturaRequest(
     bool Sos = false,
     bool BateriaBaja = false,
 
+    // El niño volvió a mantener presionado el botón para apagar su SOS (bit3 del anuncio)
+    bool SosCancelado = false,
+
     // Opcional, con zona horaria (ej. "2026-09-29T18:30:00-06:00"). Si no llega, la API usa la hora actual.
     DateTimeOffset? Timestamp = null);
 

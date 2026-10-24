@@ -155,6 +155,49 @@ namespace SafeBand.api.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
+            modelBuilder.Entity("SafeBand.api.Models.Alerta", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("int");
+
+                    SqlServerPropertyBuilderExtensions.UseIdentityColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AlumnoId")
+                        .HasColumnType("int");
+
+                    b.Property<string>("DesactivadaDesde")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.Property<string>("DesactivadaPorId")
+                        .HasColumnType("nvarchar(450)");
+
+                    b.Property<DateTime?>("Fin")
+                        .HasColumnType("datetime2");
+
+                    b.Property<DateTime>("Inicio")
+                        .HasColumnType("datetime2");
+
+                    b.Property<string>("Tipo")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<int?>("ZonaId")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DesactivadaPorId");
+
+                    b.HasIndex("ZonaId");
+
+                    b.HasIndex("AlumnoId", "Tipo", "Fin");
+
+                    b.ToTable("Alertas");
+                });
+
             modelBuilder.Entity("SafeBand.api.Models.Alumno", b =>
                 {
                     b.Property<int>("Id")
@@ -202,6 +245,25 @@ namespace SafeBand.api.Migrations
                         .HasFilter("[Matricula] IS NOT NULL");
 
                     b.ToTable("Alumnos");
+                });
+
+            modelBuilder.Entity("SafeBand.api.Models.DatosEscuela", b =>
+                {
+                    b.Property<int>("Id")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Nombre")
+                        .IsRequired()
+                        .HasMaxLength(150)
+                        .HasColumnType("nvarchar(150)");
+
+                    b.Property<string>("Telefono")
+                        .HasMaxLength(20)
+                        .HasColumnType("nvarchar(20)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("DatosEscuela", (string)null);
                 });
 
             modelBuilder.Entity("SafeBand.api.Models.Grupo", b =>
@@ -543,6 +605,16 @@ namespace SafeBand.api.Migrations
                     b.Property<string>("SecurityStamp")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<long?>("TelegramChatId")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("TelegramCodigo")
+                        .HasMaxLength(32)
+                        .HasColumnType("nvarchar(32)");
+
+                    b.Property<DateTime?>("TelegramCodigoExpira")
+                        .HasColumnType("datetime2");
+
                     b.Property<int?>("TutorId")
                         .HasColumnType("int");
 
@@ -664,6 +736,31 @@ namespace SafeBand.api.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("SafeBand.api.Models.Alerta", b =>
+                {
+                    b.HasOne("SafeBand.api.Models.Alumno", "Alumno")
+                        .WithMany()
+                        .HasForeignKey("AlumnoId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("SafeBand.api.Models.Usuario", "DesactivadaPor")
+                        .WithMany()
+                        .HasForeignKey("DesactivadaPorId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("SafeBand.api.Models.Zona", "Zona")
+                        .WithMany()
+                        .HasForeignKey("ZonaId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Alumno");
+
+                    b.Navigation("DesactivadaPor");
+
+                    b.Navigation("Zona");
                 });
 
             modelBuilder.Entity("SafeBand.api.Models.Alumno", b =>

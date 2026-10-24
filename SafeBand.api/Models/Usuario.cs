@@ -25,4 +25,11 @@ public class Usuario : IdentityUser
     /// Queda como evidencia del consentimiento del padre para tratar los datos de su hijo.
     /// </summary>
     public DateTime? AvisoPrivacidadAceptado { get; set; }
+
+    /// <summary>Chat de Telegram donde recibe los avisos (null = no lo ha vinculado).</summary>
+    public long? TelegramChatId { get; set; }
+
+    /// <summary>Código del enlace para vincular Telegram (vence en 15 min; se borra al usarlo).</summary>
+    public string? TelegramCodigo { get; set; }
+    public DateTime? TelegramCodigoExpira { get; set; }
 }

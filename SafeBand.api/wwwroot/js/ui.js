@@ -198,6 +198,8 @@ const ICONOS = {
     zonas: '<path d="M4 5h7v6H4zM13 5h7v14h-7zM4 13h7v6H4z"/>',
     grupos: '<circle cx="12" cy="7.5" r="2.5"/><circle cx="6" cy="10" r="2"/><circle cx="18" cy="10" r="2"/><path d="M8 19c.4-2.8 1.9-4.4 4-4.4s3.6 1.6 4 4.4M2.5 18c.3-2 1.6-3.2 3.5-3.2M21.5 18c-.3-2-1.6-3.2-3.5-3.2"/>',
     personal: '<circle cx="12" cy="7.5" r="3"/><path d="M5.5 20c.6-3.4 3.2-5.4 6.5-5.4s5.9 2 6.5 5.4M10.5 14.8 12 17l1.5-2.2"/>',
+    alerta: '<path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15zM10 20.5a2.2 2.2 0 0 0 4 0"/>',
+    escuela: '<path d="M3 10 12 5l9 5M5 10v9h14v-9M10 19v-5h4v5"/>',
     menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
     salir: '<path d="M14 5h4a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1h-4M10 8l-4 4 4 4M6 12h9"/>',
     mas: '<path d="M12 5v14M5 12h14"/>',

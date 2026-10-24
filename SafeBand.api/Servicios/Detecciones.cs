@@ -12,9 +12,12 @@ namespace SafeBand.api.Servicios;
 /// </summary>
 public static class Detecciones
 {
-    /// <summary>Zonas con su modo de ubicación, calibración de la prueba de alcance y tamaño del plano.</summary>
+    /// <summary>
+    /// Zonas con su modo de ubicación, calibración de la prueba de alcance, tamaño del plano y
+    /// los alumnos con SOS activo (el SOS se muestra mientras su alerta esté abierta, no solo mientras la pulsera lo mande).
+    /// </summary>
     public record Contexto(IReadOnlyDictionary<int, Ubicacion.ZonaInfo> Zonas, Ubicacion.Calibracion Calibracion,
-        double? AnchoPlano, double? AltoPlano);
+        double? AnchoPlano, double? AltoPlano, HashSet<int> ConSos);
 
     /// <summary>Se carga una vez por petición y sirve para todos los alumnos.</summary>
     public static async Task<Contexto> CargarContexto(AppDbContext db, IConfiguration config)
@@ -32,7 +35,7 @@ public static class Detecciones
         var dibujadas = zonas.Values.Where(z => z.X is not null).ToList();
         double? ancho = dibujadas.Count == 0 ? null : dibujadas.Max(z => z.X!.Value + z.Ancho!.Value);
         double? alto = dibujadas.Count == 0 ? null : dibujadas.Max(z => z.Y!.Value + z.Alto!.Value);
-        return new Contexto(zonas, calibracion, ancho, alto);
+        return new Contexto(zonas, calibracion, ancho, alto, await Alertas.ConSosActivo(db));
     }
 
     /// <summary>
@@ -55,7 +58,7 @@ public static class Detecciones
 
         var resultado = new Dictionary<int, UltimaDeteccion>();
         foreach (var grupo in filas.GroupBy(f => f.AlumnoId!.Value))
-            resultado[grupo.Key] = Armar(grupo.Select(ALectura).OrderBy(l => l.Hora).ToList(), ctx);
+            resultado[grupo.Key] = Armar(grupo.Key, grupo.Select(ALectura).OrderBy(l => l.Hora).ToList(), ctx);
         return resultado;
     }
 
@@ -71,16 +74,17 @@ public static class Detecciones
             .MaxAsync(l => (DateTime?)l.Timestamp);
         if (horaUltima is null) return null;
 
-        return Armar(await Lecturas(db, alumnoId, horaUltima.Value - Ubicacion.Simultaneas), ctx);
+        return Armar(alumnoId, await Lecturas(db, alumnoId, horaUltima.Value - Ubicacion.Simultaneas), ctx);
     }
 
-    // Lecturas simultáneas → zona decidida + estado de la pulsera (de la más fuerte; SOS y batería de cualquiera)
-    private static UltimaDeteccion Armar(List<Ubicacion.Lectura> recientes, Contexto ctx)
+    // Lecturas simultáneas → zona decidida + estado de la pulsera (de la más fuerte; batería de cualquiera).
+    // SOS = tiene una alerta de SOS abierta.
+    private static UltimaDeteccion Armar(int alumnoId, List<Ubicacion.Lectura> recientes, Contexto ctx)
     {
         var l = Ubicacion.MasFuerte(recientes);
         var d = Ubicacion.Decidir(recientes, ctx.Zonas, ctx.Calibracion, ctx.AnchoPlano, ctx.AltoPlano);
         var p = d.Posicion;
-        return new UltimaDeteccion(d.ZonaId, d.Zona, l.Rssi, l.Puesta, l.Sos, l.BateriaBaja, l.Hora, d.Cerca, d.Metodo,
+        return new UltimaDeteccion(d.ZonaId, d.Zona, l.Rssi, l.Puesta, ctx.ConSos.Contains(alumnoId), l.BateriaBaja, l.Hora, d.Cerca, d.Metodo,
             p is null ? null : new PosicionEstimada(p.X, p.Y, p.Radio, p.Nodos));
     }
 

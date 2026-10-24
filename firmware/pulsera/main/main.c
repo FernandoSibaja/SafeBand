@@ -6,19 +6,22 @@
  *
  * Pines (ver el documento de arquitectura):
  *   - GPIO5 (D3)  botón SOS a GND. También sirve el botón BOOT del XIAO (GPIO9).
- *                 Mantener 2 s -> SOS activo por 30 s.
+ *                 Mantener 3 s con el LED apagado -> SOS (vibra largo, LED azul, se anuncia 2 min).
+ *                 Mantener 3 s con el LED azul    -> cancelar (vibra 2 veces, LED verde, se anuncia 10 s).
+ *                 Con el LED apagado SIEMPRE es un SOS nuevo: si la escuela lo desactivó desde la página,
+ *                 la pulsera no se entera, y así un segundo apretón nunca se toma como "cancelar" a ciegas.
  *   - GPIO4 (D2)  reed switch simple a GND (o jumper a GND) -> pulsera PUESTA.
  *                 Sin módulo ni comparador: usa el pull-up interno (consumo ~0 con el broche abierto).
  *                 El nivel que significa "puesta" se elige en menuconfig.
  *   - GPIO3 (D1)  ADC: VBAT / 2 por divisor de 2 x 100 kOhm (opcional, menuconfig).
- *   - GPIO7 (D5)  LED WS2812: azul = SOS, rojo parpadeando = quitada,
+ *   - GPIO7 (D5)  LED WS2812: azul = SOS, verde = SOS cancelado, rojo parpadeando = quitada,
  *                 naranja parpadeando lento = batería baja, apagado = normal.
- *   - GPIO6 (D4)  motor de vibración por transistor 2N2222: vibra al activar el SOS.
+ *   - GPIO6 (D4)  motor de vibración por transistor 2N2222: un pulso largo al activar el SOS, dos cortos al cancelarlo.
  *
  * Formato del manufacturer data (4 bytes):
  *   [0-1] 0xFFFF  ID de compañía reservado para pruebas
  *   [2]   0x01    versión del formato
- *   [3]   estado  bit0 = puesta, bit1 = SOS, bit2 = batería baja
+ *   [3]   estado  bit0 = puesta, bit1 = SOS, bit2 = batería baja, bit3 = SOS cancelado
  */
 
 #include <stdbool.h>
@@ -49,9 +52,11 @@ static const char *TAG = "pulsera";
 
 // ---------- Tiempos ----------
 #define TICK_MS              50
-#define SOS_PULSACION_MS     2000     // cuánto hay que mantener el botón
-#define SOS_DURACION_MS      30000    // cuánto dura el SOS activo
-#define VIBRACION_SOS_MS     600      // pulso del motor al activar el SOS
+#define SOS_PULSACION_MS     3000     // cuánto hay que mantener el botón (evita presiones accidentales y por juego)
+#define SOS_DURACION_MS      120000   // cuánto se anuncia el SOS (en el sistema sigue activo hasta que lo desactiven)
+#define CANCELADO_MS         10000    // cuánto se anuncia "SOS cancelado" (para que algún nodo lo oiga)
+#define VIBRACION_SOS_MS     600      // pulso largo al activar el SOS
+#define VIBRACION_CORTA_MS   150      // dos pulsos cortos al cancelar
 #define BATERIA_CADA_MS      5000     // cada cuánto se mide la batería
 
 // Intervalo de anuncio en unidades de 0.625 ms
@@ -62,6 +67,7 @@ static const char *TAG = "pulsera";
 #define BIT_PUESTA       (1 << 0)
 #define BIT_SOS          (1 << 1)
 #define BIT_BATERIA_BAJA (1 << 2)
+#define BIT_SOS_CANCELADO (1 << 3)
 
 // Brillo del LED (0-255): bajo, porque va pegado a la muñeca y gasta batería
 #define BRILLO 24
@@ -102,7 +108,7 @@ static void anunciar(uint8_t estado)
     struct ble_gap_adv_params params = {0};
     params.conn_mode = BLE_GAP_CONN_MODE_NON;   // solo anuncia, no acepta conexiones
     params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    params.itvl_min = params.itvl_max = (estado & BIT_SOS) ? INTERVALO_SOS : INTERVALO_NORMAL;
+    params.itvl_min = params.itvl_max = (estado & (BIT_SOS | BIT_SOS_CANCELADO)) ? INTERVALO_SOS : INTERVALO_NORMAL;
 
     rc = ble_gap_adv_start(tipo_direccion, NULL, BLE_HS_FOREVER, &params, NULL, NULL);
     if (rc != 0) {
@@ -235,27 +241,44 @@ static void bucle_principal(void)
 {
     uint32_t ms_presionado = 0;
     uint32_t ms_sos_restante = 0;
-    uint32_t ms_vibracion = 0;
+    uint32_t ms_cancelado_restante = 0;
+    uint32_t ms_vibracion = 0;      // tiempo que falta del patrón de vibración
+    uint32_t patron_vibracion = 0;  // 0 = pulso continuo; si no, dos pulsos cortos
     uint32_t contador = 0;
     bool bateria_baja = false;
 
     while (true) {
-        // --- Botón SOS (externo o BOOT): hay que mantenerlo 2 s (evita falsos positivos) ---
+        // --- Botón SOS (externo o BOOT): hay que mantenerlo 3 s ---
+        // LED azul (SOS anunciándose) → cancelar. LED apagado → SOS nuevo, siempre.
         bool presionado = gpio_get_level(PIN_BOTON_SOS) == 0 || gpio_get_level(PIN_BOTON_BOOT) == 0;
         if (presionado) {
             ms_presionado += TICK_MS;
             if (ms_presionado == SOS_PULSACION_MS) {
-                ms_sos_restante = SOS_DURACION_MS;
-                ms_vibracion = VIBRACION_SOS_MS;
-                ESP_LOGW(TAG, "¡SOS activado!");
+                if (ms_sos_restante > 0) {
+                    ms_sos_restante = 0;
+                    ms_cancelado_restante = CANCELADO_MS;
+                    ms_vibracion = 3 * VIBRACION_CORTA_MS;   // vibra - pausa - vibra
+                    patron_vibracion = 1;
+                    ESP_LOGW(TAG, "SOS cancelado desde la pulsera");
+                } else {
+                    ms_sos_restante = SOS_DURACION_MS;
+                    ms_cancelado_restante = 0;
+                    ms_vibracion = VIBRACION_SOS_MS;
+                    patron_vibracion = 0;
+                    ESP_LOGW(TAG, "¡SOS activado!");
+                }
             }
         } else {
             ms_presionado = 0;
         }
         if (ms_sos_restante > 0) ms_sos_restante -= TICK_MS;
+        if (ms_cancelado_restante > 0) ms_cancelado_restante -= TICK_MS;
 
-        // --- Motor: pulso corto para confirmar el SOS ---
-        gpio_set_level(PIN_MOTOR, ms_vibracion > 0);
+        // --- Motor: pulso largo (SOS) o dos cortos (cancelado) ---
+        bool vibrar = ms_vibracion > 0;
+        if (vibrar && patron_vibracion == 1)   // apagado en el tercio de en medio = la pausa
+            vibrar = ms_vibracion > 2 * VIBRACION_CORTA_MS || ms_vibracion <= VIBRACION_CORTA_MS;
+        gpio_set_level(PIN_MOTOR, vibrar);
         if (ms_vibracion > 0) ms_vibracion -= TICK_MS;
 
         // --- Batería (cada 5 s), con 100 mV de histéresis para no parpadear en el límite ---
@@ -273,19 +296,21 @@ static void bucle_principal(void)
         // --- Armar el byte de estado ---
         uint8_t estado = 0;
         if (gpio_get_level(PIN_REED) == CONFIG_SAFEBAND_REED_NIVEL_PUESTA) estado |= BIT_PUESTA;
-        if (ms_sos_restante > 0) estado |= BIT_SOS;
-        if (bateria_baja)        estado |= BIT_BATERIA_BAJA;
+        if (ms_sos_restante > 0)       estado |= BIT_SOS;
+        if (ms_cancelado_restante > 0) estado |= BIT_SOS_CANCELADO;
+        if (bateria_baja)              estado |= BIT_BATERIA_BAJA;
 
         // --- Solo se reinicia el anuncio si algo cambió ---
         if (ble_listo && estado != estado_anunciado) {
             anunciar(estado);
         }
 
-        // --- LED: prioridad SOS > quitada > batería baja > apagado ---
+        // --- LED: prioridad SOS > cancelado > quitada > batería baja > apagado ---
         contador++;
         bool parpadeo = (contador / 10) % 2;    // cambia cada 500 ms
         bool parpadeo_lento = (contador / 20) % 2;   // cambia cada 1 s
         if (estado & BIT_SOS)                 color_led(0, 0, BRILLO);                        // azul fijo
+        else if (ms_cancelado_restante > CANCELADO_MS - 2000) color_led(0, BRILLO, 0);        // verde 2 s
         else if (!(estado & BIT_PUESTA))      color_led(parpadeo ? BRILLO : 0, 0, 0);         // rojo parpadeando
         else if (estado & BIT_BATERIA_BAJA)   color_led(parpadeo_lento ? BRILLO : 0, parpadeo_lento ? BRILLO / 3 : 0, 0); // naranja
         else                                  color_led(0, 0, 0);                             // apagado

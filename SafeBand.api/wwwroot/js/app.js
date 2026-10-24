@@ -19,6 +19,8 @@ import { vistaPulseras } from "./vistas/pulseras.js";
 import { vistaHijos } from "./vistas/hijos.js";
 import { vistaMiGrupo } from "./vistas/migrupo.js";
 import { vistaEscuela } from "./vistas/escuela.js";
+import { vistaAlertas } from "./vistas/alertas.js";
+import { vistaDatosEscuela } from "./vistas/datos-escuela.js";
 
 const raiz = document.getElementById("app");
 
@@ -27,6 +29,7 @@ const SECCIONES = [
     { ruta: "hijos",    titulo: "Mis hijos",       icono: "alumnos",  roles: ["Padre"], vista: vistaHijos },
     { ruta: "grupo",    titulo: "Mi grupo",        icono: "grupos",   roles: ["Maestro"], vista: vistaMiGrupo },
     { ruta: "escuela",  titulo: "Panel de la escuela", icono: "zonas", roles: ["Administrador"], vista: vistaEscuela },
+    { ruta: "alertas",  titulo: "Alertas",         icono: "alerta",   roles: ["Administrador", "Maestro"], vista: vistaAlertas, contador: true },
     { ruta: "vivo",     titulo: "En vivo",         icono: "vivo",     roles: ["Administrador"], vista: vistaVivo },
     { ruta: "alumnos",  titulo: "Alumnos",         icono: "alumnos",  roles: ["Administrador"], vista: vistaAlumnos },
     { ruta: "grupos",   titulo: "Grupos",          icono: "grupos",   roles: ["Administrador"], vista: vistaGrupos },
@@ -34,6 +37,7 @@ const SECCIONES = [
     { ruta: "tutores",  titulo: "Tutores",         icono: "tutores",  roles: ["Administrador"], vista: vistaTutores },
     { ruta: "zonas",    titulo: "Zonas y nodos",   icono: "zonas",    roles: ["Administrador"], vista: vistaZonas },
     { ruta: "personal", titulo: "Personal",        icono: "personal", roles: ["Administrador"], vista: vistaPersonal },
+    { ruta: "datos-escuela", titulo: "Datos de la escuela", icono: "escuela", roles: ["Administrador"], vista: vistaDatosEscuela },
 ];
 
 let usuario = null;          // quién inició sesión (o null)
@@ -53,17 +57,55 @@ async function iniciar() {
         }
     }
     dibujar();
+    vigilarAlertas();
 }
+
+// ---------- Contador de alertas activas (menú y título de la pestaña) ----------
+// Para el personal: cada 15 s pregunta cuántas alertas activas le tocan. Así un SOS se nota
+// aunque esté en otra sección. Con alertas, la pestaña dice "(1) ..." y el contador se pone rojo.
+
+const INTERVALO_ALERTAS_MS = 15000;
+let alertasActivas = 0;
+let temporizadorAlertas = null;
+
+async function revisarAlertas() {
+    if (!usuario || !usuario.roles.some((r) => r === "Administrador" || r === "Maestro")) return;
+    try {
+        alertasActivas = (await api("/api/alertas?activas=true")).length;
+    } catch { return; }   // sin conexión: se deja el último valor
+    pintarContador();
+}
+
+function pintarContador() {
+    for (const c of document.querySelectorAll(".menu-contador")) {
+        c.textContent = String(alertasActivas);
+        c.hidden = alertasActivas === 0;
+    }
+    document.title = document.title.replace(/^\(\d+\) /, "");
+    if (alertasActivas > 0) document.title = `(${alertasActivas}) ${document.title}`;
+}
+
+function vigilarAlertas() {
+    clearInterval(temporizadorAlertas);
+    temporizadorAlertas = null;
+    alertasActivas = 0;
+    if (!usuario) return;
+    revisarAlertas();
+    temporizadorAlertas = setInterval(revisarAlertas, INTERVALO_ALERTAS_MS);
+}
+window.addEventListener("alertas-cambiaron", revisarAlertas);
 
 function alIniciarSesion(datos) {
     usuario = datos;
     if (!location.hash) location.hash = "#/";   // sin ruta → la primera sección de su rol
     dibujar();
+    vigilarAlertas();
 }
 
 async function cerrarSesion() {
     try { await api("/api/auth/logout", { metodo: "POST" }); } catch { /* aunque falle, se sale */ }
     usuario = null;
+    vigilarAlertas();   // deja de preguntar
     dibujar();
 }
 
@@ -71,6 +113,7 @@ async function cerrarSesion() {
 window.addEventListener("sesion-vencida", () => {
     if (!usuario) return;
     usuario = null;
+    vigilarAlertas();
     dibujar("Tu sesión terminó. Inicia sesión de nuevo.");
 });
 
@@ -103,6 +146,7 @@ function dibujar(mensajeLogin) {
         contenido);
     raiz.append(panel);
     document.title = `${seccion.titulo} · SafeBand`;
+    pintarContador();
 
     // En celular: el menú se cierra al tocar fuera de él o con Esc
     panel.addEventListener("click", (e) => {
@@ -125,7 +169,8 @@ function lateral(permitidas, actual) {
                     href: `#/${s.ruta}`,
                     "aria-current": s === actual ? "page" : null,
                     onclick: () => document.querySelector(".panel")?.classList.remove("menu-abierto"),
-                }, icono(s.icono), s.titulo))),
+                }, icono(s.icono), s.titulo,
+                    s.contador && el("span", { class: "menu-contador", "aria-label": "alertas activas", hidden: true })))),
         el("div", { class: "usuario" },
             el("div", {},
                 el("p", { class: "usuario-nombre" }, usuario.nombre || usuario.email),
@@ -141,7 +186,7 @@ function barraMovil() {
         "aria-controls": "lateral",
         "aria-label": "Abrir menú",
         onclick: () => document.querySelector(".panel").classList.toggle("menu-abierto"),
-    }, icono("menu"));
+    }, icono("menu"), el("span", { class: "menu-contador", "aria-label": "alertas activas", hidden: true }));
     return el("header", { class: "barra-movil" }, el("a", { class: "marca", href: "#/" }, logo(24), "SafeBand"), boton);
 }
 

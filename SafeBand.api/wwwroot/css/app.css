@@ -282,6 +282,15 @@ button, input, select, textarea { font: inherit; color: inherit; }
     color: var(--azul);
 }
 .menu svg { flex: none; }
+/* Contador de alertas activas junto a "Alertas" (y en el botón del menú en celular) */
+.menu-contador {
+    margin-left: auto; min-width: 22px; height: 22px; padding: 0 6px; border-radius: 11px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--peligro); color: #fff; font-size: var(--t-xs); font-weight: 700;
+}
+.menu-contador[hidden] { display: none; }
+.barra-movil .boton { position: relative; }
+.barra-movil .menu-contador { position: absolute; top: -6px; right: -6px; margin: 0; }
 
 .usuario {
     margin-top: auto;
@@ -792,6 +801,24 @@ dialog.confirmar .botones { display: flex; justify-content: flex-end; gap: 10px;
 .cifra.azul { background: var(--azul-claro); } .cifra.azul .cifra-valor { color: var(--azul); }
 .cifra.alerta { background: var(--alerta-fondo); } .cifra.alerta .cifra-valor { color: var(--alerta); }
 
+/* ---------- Alertas ---------- */
+
+.alertas-activas { display: grid; gap: 12px; margin-bottom: 28px; }
+.alerta-activa {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 16px 18px; border-radius: var(--r-panel); background: var(--peligro); color: #fff;
+}
+.alerta-activa-titulo { font-size: var(--t-lg); font-weight: 700; }
+.alerta-activa-nota { font-size: var(--t-sm); opacity: .9; margin-top: 4px; }
+.boton-blanco { background: #fff; color: var(--peligro); border-color: #fff; text-decoration: none; }
+.boton-blanco:hover { background: var(--peligro-fondo); }
+.alerta-sos { display: grid; gap: 10px; justify-items: start; }
+.subtitulo-seccion { font-size: var(--t-lg); margin-bottom: 12px; }
+.tarjeta-form {
+    display: grid; gap: 16px; max-width: 560px; padding: 20px 22px;
+    background: var(--superficie); border: 1px solid var(--linea); border-radius: var(--r-panel);
+}
+
 /* ---------- Panel de la escuela (director) ---------- */
 
 .panel-escuela { display: grid; gap: 20px; }
@@ -807,6 +834,11 @@ dialog.confirmar .botones { display: flex; justify-content: flex-end; gap: 10px;
 /* ---------- Vista del padre: "Mis hijos" ---------- */
 
 .hijos-padre { display: grid; gap: 20px; max-width: 640px; }
+.telegram-tarjeta {
+    display: grid; gap: 10px; justify-items: start; max-width: 640px; margin-bottom: 20px;
+    padding: 16px 18px; background: var(--azul-tenue); border: 1px solid var(--azul-claro); border-radius: var(--r-panel);
+}
+.telegram-tarjeta[hidden] { display: none; }
 .hijo-tarjeta {
     display: grid;
     gap: 16px;

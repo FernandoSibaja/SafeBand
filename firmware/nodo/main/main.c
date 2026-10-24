@@ -4,7 +4,7 @@
  * Escanea anuncios BLE de pulseras (nombre "SB-xxxx"), promedia el RSSI de cada
  * una durante una ventana (por defecto 10 s) y manda UNA lectura por pulsera a
  * la API por WiFi (HTTP POST /api/lecturas).
- * Si una pulsera anuncia SOS, se manda de inmediato sin esperar la ventana.
+ * Si una pulsera anuncia SOS (o que lo canceló), se manda de inmediato sin esperar la ventana.
  *
  * Tareas:
  *   NimBLE (host)   -> recibe anuncios y los acumula en la tabla
@@ -12,7 +12,7 @@
  *   tarea_envio     -> saca de la cola y hace el POST a la API
  *
  * Formato del manufacturer data de la pulsera (4 bytes):
- *   FF FF 01 EE   EE: bit0 = puesta, bit1 = SOS, bit2 = batería baja
+ *   FF FF 01 EE   EE: bit0 = puesta, bit1 = SOS, bit2 = batería baja, bit3 = SOS cancelado
  */
 
 #include <math.h>
@@ -51,6 +51,7 @@ static const char *TAG = "nodo";
 #define BIT_PUESTA        (1 << 0)
 #define BIT_SOS           (1 << 1)
 #define BIT_BATERIA_BAJA  (1 << 2)
+#define BIT_SOS_CANCELADO (1 << 3)
 
 // ---------- Datos ----------
 typedef struct {
@@ -66,8 +67,8 @@ typedef struct {
     int32_t suma;
     int cuenta;
     uint8_t estado;          // último estado recibido
-    bool sos_previo;
-    TickType_t ultimo_sos;   // cuándo se avisó el último SOS
+    uint8_t ultimo_urgente;  // bits SOS / SOS cancelado del último aviso inmediato
+    TickType_t ultimo_sos;   // cuándo se mandó el último aviso inmediato
 } acumulador_t;
 
 static acumulador_t tabla[MAX_PULSERAS];
@@ -145,14 +146,15 @@ static void wifi_iniciar(void)
 // ============================================================
 static void enviar(const lectura_t *l)
 {
-    char json[192];
+    char json[256];
     snprintf(json, sizeof(json),
              "{\"nodo\":\"%s\",\"pulsera\":\"%s\",\"rssi\":%d,"
-             "\"puesta\":%s,\"sos\":%s,\"bateriaBaja\":%s}",
+             "\"puesta\":%s,\"sos\":%s,\"bateriaBaja\":%s,\"sosCancelado\":%s}",
              CONFIG_SAFEBAND_NODO_ID, l->pulsera, l->rssi,
              (l->estado & BIT_PUESTA) ? "true" : "false",
              (l->estado & BIT_SOS) ? "true" : "false",
-             (l->estado & BIT_BATERIA_BAJA) ? "true" : "false");
+             (l->estado & BIT_BATERIA_BAJA) ? "true" : "false",
+             (l->estado & BIT_SOS_CANCELADO) ? "true" : "false");
 
     esp_http_client_config_t cfg = {
         .url = CONFIG_SAFEBAND_API_URL,
@@ -227,10 +229,12 @@ static void registrar(const char *id, int rssi, uint8_t estado)
         a->cuenta++;
         a->estado = estado;
 
-        if (estado & BIT_SOS) {
+        // SOS o "SOS cancelado": sale de inmediato si es nuevo (cambió) o si ya pasó el enfriamiento
+        uint8_t urgente = estado & (BIT_SOS | BIT_SOS_CANCELADO);
+        if (urgente) {
             TickType_t ahora = xTaskGetTickCount();
-            if (!a->sos_previo || (ahora - a->ultimo_sos) >= pdMS_TO_TICKS(COOLDOWN_SOS_MS)) {
-                a->sos_previo = true;
+            if (urgente != a->ultimo_urgente || (ahora - a->ultimo_sos) >= pdMS_TO_TICKS(COOLDOWN_SOS_MS)) {
+                a->ultimo_urgente = urgente;
                 a->ultimo_sos = ahora;
                 avisar_sos = true;
             }
@@ -238,11 +242,12 @@ static void registrar(const char *id, int rssi, uint8_t estado)
     }
     xSemaphoreGive(mutex_tabla);
 
-    // El SOS no espera la ventana: sale ya, con el RSSI instantáneo
+    // El SOS (y su cancelación) no espera la ventana: sale ya, con el RSSI instantáneo
     if (avisar_sos) {
         lectura_t l = { .rssi = rssi, .estado = estado };
         strlcpy(l.pulsera, id, ID_MAX);
-        ESP_LOGW(TAG, "¡SOS de %s! Enviando de inmediato", id);
+        if (estado & BIT_SOS) ESP_LOGW(TAG, "¡SOS de %s! Enviando de inmediato", id);
+        else                  ESP_LOGW(TAG, "%s canceló su SOS. Enviando de inmediato", id);
         xQueueSend(cola_envio, &l, 0);
     }
 }

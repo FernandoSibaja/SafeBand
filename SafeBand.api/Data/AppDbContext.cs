@@ -21,6 +21,8 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
     public DbSet<Invitacion> Invitaciones => Set<Invitacion>();
     public DbSet<Pulsera> Pulseras => Set<Pulsera>();
     public DbSet<LecturaBle> LecturasBle => Set<LecturaBle>();
+    public DbSet<Alerta> Alertas => Set<Alerta>();
+    public DbSet<DatosEscuela> DatosEscuela => Set<DatosEscuela>();
 
     // Reglas extra que EF no puede adivinar por convención
     protected override void OnModelCreating(ModelBuilder modelBuilder)
@@ -31,6 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
         modelBuilder.Entity<Usuario>(e =>
         {
             e.Property(u => u.NombreMostrar).HasMaxLength(150);
+            e.Property(u => u.TelegramCodigo).HasMaxLength(32);
             // Un registro de Tutor solo puede tener una cuenta
             e.HasIndex(u => u.TutorId).IsUnique().HasFilter("[TutorId] IS NOT NULL");
             e.HasOne(u => u.Tutor).WithMany().HasForeignKey(u => u.TutorId)
@@ -126,6 +129,26 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : IdentityDbCo
             // Si se borra un alumno, sus pulseras quedan sin asignar (AlumnoId = null) en vez de borrarse
             e.HasOne(p => p.Alumno).WithMany(a => a.Pulseras).HasForeignKey(p => p.AlumnoId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<DatosEscuela>(e =>
+        {
+            e.ToTable("DatosEscuela");
+            e.Property(d => d.Id).ValueGeneratedNever();   // siempre la fila 1
+            e.Property(d => d.Nombre).HasMaxLength(150);
+            e.Property(d => d.Telefono).HasMaxLength(20);
+        });
+
+        modelBuilder.Entity<Alerta>(e =>
+        {
+            e.Property(a => a.Tipo).HasConversion<string>().HasMaxLength(30);
+            e.Property(a => a.DesactivadaDesde).HasConversion<string>().HasMaxLength(20);
+            // Las alertas son historial: no se borran en cascada
+            e.HasOne(a => a.Alumno).WithMany().HasForeignKey(a => a.AlumnoId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(a => a.Zona).WithMany().HasForeignKey(a => a.ZonaId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(a => a.DesactivadaPor).WithMany().HasForeignKey(a => a.DesactivadaPorId).OnDelete(DeleteBehavior.Restrict);
+            // "¿Tiene este alumno una alerta activa?" se pregunta con cada lectura
+            e.HasIndex(a => new { a.AlumnoId, a.Tipo, a.Fin });
         });
 
         modelBuilder.Entity<LecturaBle>(e =>
