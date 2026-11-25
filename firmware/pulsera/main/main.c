@@ -1,28 +1,4 @@
-/*
- * SafeBand · Pulsera (Seeed XIAO ESP32-C3)
- *
- * Anuncia por BLE su identificador (ej. "SB-0001") y su estado dentro del
- * "manufacturer data" del anuncio. Los nodos escanean este anuncio.
- *
- * Pines (ver el documento de arquitectura):
- *   - GPIO5 (D3)  botón SOS a GND. También sirve el botón BOOT del XIAO (GPIO9).
- *                 Mantener 3 s con el LED apagado -> SOS (vibra largo, LED azul, se anuncia 2 min).
- *                 Mantener 3 s con el LED azul    -> cancelar (vibra 2 veces, LED verde, se anuncia 10 s).
- *                 Con el LED apagado SIEMPRE es un SOS nuevo: si la escuela lo desactivó desde la página,
- *                 la pulsera no se entera, y así un segundo apretón nunca se toma como "cancelar" a ciegas.
- *   - GPIO4 (D2)  reed switch simple a GND (o jumper a GND) -> pulsera PUESTA.
- *                 Sin módulo ni comparador: usa el pull-up interno (consumo ~0 con el broche abierto).
- *                 El nivel que significa "puesta" se elige en menuconfig.
- *   - GPIO3 (D1)  ADC: VBAT / 2 por divisor de 2 x 100 kOhm (opcional, menuconfig).
- *   - GPIO7 (D5)  LED WS2812: azul = SOS, verde = SOS cancelado, rojo parpadeando = quitada,
- *                 naranja parpadeando lento = batería baja, apagado = normal.
- *   - GPIO6 (D4)  motor de vibración por transistor 2N2222: un pulso largo al activar el SOS, dos cortos al cancelarlo.
- *
- * Formato del manufacturer data (4 bytes):
- *   [0-1] 0xFFFF  ID de compañía reservado para pruebas
- *   [2]   0x01    versión del formato
- *   [3]   estado  bit0 = puesta, bit1 = SOS, bit2 = batería baja, bit3 = SOS cancelado
- */
+
 
 #include <stdbool.h>
 #include <string.h>
