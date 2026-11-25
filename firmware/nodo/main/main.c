@@ -1,19 +1,4 @@
-/*
- * SafeBand · Nodo receptor (ESP32 clásico)
- *
- * Escanea anuncios BLE de pulseras (nombre "SB-xxxx"), promedia el RSSI de cada
- * una durante una ventana (por defecto 10 s) y manda UNA lectura por pulsera a
- * la API por WiFi (HTTP POST /api/lecturas).
- * Si una pulsera anuncia SOS (o que lo canceló), se manda de inmediato sin esperar la ventana.
- *
- * Tareas:
- *   NimBLE (host)   -> recibe anuncios y los acumula en la tabla
- *   tarea_ventana   -> cada ventana saca los promedios y los pone en la cola
- *   tarea_envio     -> saca de la cola y hace el POST a la API
- *
- * Formato del manufacturer data de la pulsera (4 bytes):
- *   FF FF 01 EE   EE: bit0 = puesta, bit1 = SOS, bit2 = batería baja, bit3 = SOS cancelado
- */
+
 
 #include <math.h>
 #include <stdbool.h>
